@@ -7,14 +7,27 @@ RED+GREEN test.
 
 ## [Unreleased]
 
+### Added — agent parity (reverse-engineered from Claude Code + Hermes public surface)
+- **Slash commands**: `/help /status /model /clear /plan /compact /resume /skills /review /subagent`
+  (Claude Code's `/`-dispatcher analogue), wired in `bebop.ts`.
+- **Plan mode** (`bebop run <class> --plan`): read-only loop — `edit` is denied before the guard
+  gate (Explore/Plan subagent semantics). RED-proved in `src/loop.test.ts`.
+- **Headless JSON** (`bebop run <class> --json`): one-shot structured output, no prompts.
+- **Settings file** (`bebop.json` + `~/.bebop/settings.json`): `model`, `permissions.allow/deny`
+  (glob rules feeding the guard scope/red-lines), `hooks`. See `src/settings.ts`.
+- **Hooks** (`src/hooks.ts`): PreToolUse / PostToolUse / Stop with deny decisions (Claude Code
+  analogue). A PreToolUse hook runs *before* the guard gate and can deny (fail-closed on crash).
+- **Subagents** (`subagent()` in `src/loop.ts`): scoped, read-only, cheaper-model delegation that
+  returns only a summary (context-saving Explore/Plan pattern).
+- **Skills loader** (`src/skills.ts`): loads `SKILL.md` (agent-skills frontmatter) from
+  `.bebop/skills/*`; ships one sample skill (`/review`).
+- **Tests**: 22 new RED+GREEN tests (settings, hooks, loop plan/hooks/subagent, skills).
+
 ### Fixed
 - **CI failure (MCP tests flaky/hanging on the runner)** — `mcp.test.ts` previously spawned a
-  real `bebop.ts mcp` child process and asserted over stdio with an 8s timeout; under CI load the
-  handshake timed out, producing 3 fails + 2 cancelled. Rewrote the tests to call the JSON-RPC
-  dispatcher `handle()` directly (pure, no spawn, no timeout) — deterministic and CI-stable.
-  Added `InvalidParamsError` so malformed tool args return a proper `-32602` instead of a generic
-  `-32000`. Verified: 5/5 MCP tests; full suite 110 (106 pass + 4 skipped w/o `better-auth`,
-  110/110 with). `gh run` now green.
+  real `bebop.ts mcp` child process and asserted over stdio with an 8s timeout; replaced with a
+  deterministic pure `handle()` test. Added `InvalidParamsError` (proper `-32602`).
+- **CI Node**: pinned `actions/setup-node` to Node 22 (LTS) to clear the Node20 deprecation notice.
 
 ## [0.1.0] — 2026-07-08
 

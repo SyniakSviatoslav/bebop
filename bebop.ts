@@ -31,8 +31,92 @@ import { startSyncServer } from './src/sync-server.ts';
 import { selfMaintain, selfEvolve, recordSession, selfLoop } from './src/consciousness.ts';
 import { createOrUnlock, lock, unlock, loadBlob } from './src/vault.ts';
 import { runMcpServer } from './src/mcp.ts';
+import { loadSettings } from './src/settings.ts';
+import { subagent } from './src/loop.ts';
+import { loadSkills, findSkill } from './src/skills.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+
+// Slash-command dispatcher — Claude Code's /help /clear /model /status /plan /compact /resume + bebop /review.
+async function handleSlash(name: string, args: string[]): Promise<void> {
+  const paint = makePaint();
+  const settings = loadSettings();
+  switch (name) {
+    case 'help':
+    case '?':
+      console.log(banner(paint));
+      console.log(paint.dim('  /help      this list'));
+      console.log(paint.dim('  /status    backend rotation + guard state'));
+      console.log(paint.dim('  /model     show routed model (= bebop route doer)'));
+      console.log(paint.dim('  /clear     reset in-process living memory'));
+      console.log(paint.dim('  /plan      show plan-mode note (run --plan to use)'));
+      console.log(paint.dim('  /compact   summarize + trim living memory'));
+      console.log(paint.dim('  /resume    resume last session node from memory'));
+      console.log(paint.dim('  /review    run the review skill checklist'));
+      console.log(paint.dim('  /skills    list loaded skills'));
+      return;
+    case 'status': {
+      const profile = loadProfile() ?? BEBOP_PRESET;
+      console.log(banner(paint));
+      console.log(paint.dim(`  model=${(settings.model ?? route('doer').model)}  rotation=${statusLine(profile)}`));
+      const t = selfTest();
+      console.log(paint.dim(`  guard OS certified=${t.ok} (deny-on-red)`));
+      return;
+    }
+    case 'model':
+      console.log(paint.teal(`  model → ${settings.model ?? route('doer').model}`));
+      return;
+    case 'clear': {
+      const mem = livingMemory();
+      const before = mem.size;
+      mem.clear();
+      console.log(paint.dim(`  cleared living memory (was ${before}, now ${mem.size})`));
+      return;
+    }
+    case 'compact': {
+      const mem = livingMemory();
+      const before = mem.size;
+      mem.tick();
+      console.log(paint.dim(`  compacted: ${before} → ${mem.size} (forgot ${before - mem.size})`));
+      return;
+    }
+    case 'resume': {
+      const mem = livingMemory();
+      const last = mem.nearest('hermes', 1)[0];
+      console.log(paint.dim(`  resume → ${last ? last.id : 'no session node yet'}`));
+      return;
+    }
+    case 'plan':
+      console.log(paint.dim('  plan mode: read-only. Use `bebop run <class> --plan` to explore without edits.'));
+      return;
+    case 'skills': {
+      const skills = loadSkills();
+      console.log(paint.teal(`  ${skills.length} skill(s):`));
+      for (const s of skills) console.log(paint.dim(`  · ${s.name} — ${s.description}`));
+      return;
+    }
+    case 'review': {
+      const skills = loadSkills();
+      const sk = findSkill(skills, 'review');
+      const t = selfTest();
+      console.log(paint.teal(`  /review — guard OS certified=${t.ok}`));
+      if (sk) console.log(paint.dim(`  skill: ${sk.name} — ${sk.description}\n${sk.body.split('\n').slice(0, 6).join('\n')}`));
+      else console.log(paint.amber('  review skill not found in .bebop/skills'));
+      return;
+    }
+    case 'subagent': {
+      // /subagent "<task>" — delegate read-only recon to a cheaper doer (Explore/Plan semantics).
+      const task = args.join(' ');
+      const r = await subagent(task || 'investigate the repo surface');
+      console.log(paint.dim(`  [subagent] steps=${r.steps} denied=${r.denied}`));
+      console.log(paint.dim(`  ${r.summary.split('\n')[0]}`));
+      return;
+    }
+    default:
+      console.log(paint.blood(`  unknown slash command: /${name}  (try /help)`));
+      process.exit(2);
+  }
+}
 
 async function main() {
   const [, , cmd, ...args] = process.argv;
@@ -280,11 +364,30 @@ async function main() {
 
   if (cmd === 'run') {
     const cls = (args[0] as TaskClass) ?? 'doer';
+    const planMode = args.includes('--plan');
+    const asJson = args.includes('--json');
+    const settings = loadSettings();
     const profile = loadProfile() ?? undefined;
-    const res = await runLoop({ cwd: path.resolve(HERE, '..', '..'), taskClass: cls, profile });
-    for (const line of res.transcript) console.log(line);
-    console.log(paint.dim(`  steps=${res.steps} mutations=${res.mutations} denied=${res.denied} ok=${res.ok} envelopes=${res.log.length}`));
+    const res = await runLoop({
+      cwd: path.resolve(HERE, '..', '..'),
+      taskClass: cls,
+      profile,
+      hooks: settings.hooks['PreToolUse'],
+      planMode,
+    });
+    if (asJson) {
+      console.log(JSON.stringify({ ok: res.ok, steps: res.steps, mutations: res.mutations, denied: res.denied, planMode }, null, 2));
+    } else {
+      for (const line of res.transcript) console.log(line);
+      console.log(paint.dim(`  steps=${res.steps} mutations=${res.mutations} denied=${res.denied} ok=${res.ok} envelopes=${res.log.length}${planMode ? ' [plan mode]' : ''}`));
+    }
     if (!res.ok) process.exit(1);
+    return;
+  }
+
+  // Slash commands — Claude Code analogue (/help /clear /model /status /plan /resume /compact /review).
+  if (cmd.startsWith('/')) {
+    await handleSlash(cmd.slice(1).toLowerCase(), args);
     return;
   }
 

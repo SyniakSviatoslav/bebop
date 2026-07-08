@@ -19,6 +19,7 @@ import { runBackend, type Backend } from './backend.ts';
 import { selectBackend, rotate } from './routing.ts';
 import { emptyLedger, record, type Ledger } from './token.ts';
 import type { Profile } from './profile.ts';
+import { preToolUse, type HookSpec } from './hooks.ts';
 
 export type ToolName = 'read' | 'edit' | 'run' | 'grep' | 'dispatch' | 'done';
 
@@ -40,6 +41,10 @@ export interface BebopConfig {
   forcedBackend?: Backend | null;
   // injected native runner for the `native` backend (so it doesn't shell out).
   runNative?: (task: string) => DispatchResult;
+  // hooks (Claude Code PreToolUse/PostToolUse/Stop analogue) — run before the guard gate.
+  hooks?: HookSpec[];
+  // plan mode: read-only; edit/write tools are denied (Explore/Plan subagent semantics).
+  planMode?: boolean;
 }
 
 export interface LoopContext {
@@ -85,6 +90,18 @@ function defaultLlm(): LlmResponse {
 
 function runTool(name: ToolName, args: any, cfg: BebopConfig): { result: string; mutated: boolean; denied: boolean } {
   const p = path.resolve(cfg.cwd, String(args.path ?? ''));
+
+  // PreToolUse hooks (Claude Code analogue) — run BEFORE the guard gate; a hook can deny.
+  if (cfg.hooks && (name === 'edit' || name === 'run' || name === 'dispatch')) {
+    const hd = preToolUse(cfg.hooks, name, args);
+    if (hd.blocked) return { result: hd.reason ?? 'blocked by hook', mutated: false, denied: true };
+  }
+
+  // Plan mode: read-only. Edit/write is denied — Explore/Plan subagent semantics.
+  if (cfg.planMode && (name === 'edit')) {
+    return { result: 'plan mode: edit denied (read-only). Review the plan, then run without --plan.', mutated: false, denied: true };
+  }
+
   switch (name) {
     case 'read':
       return { result: fs.readFileSync(p, 'utf8').slice(0, 4000), mutated: false, denied: false };
@@ -213,3 +230,31 @@ export async function runLoop(cfg: BebopConfig): Promise<LoopResult> {
   const ok = routing.ok && denied === 0;
   return { steps, mutations, denied, transcript, ok, log, ledger };
 }
+
+// Subagent — Claude Code's .claude/agents/*.md analogue. Runs a SCOPED, read-only loop with a
+// cheaper model, returns only the summary (not the full transcript) to save context. This is the
+// Explore/Plan subagent pattern: delegate narrow read-only reconnaissance to a cheaper doer.
+export async function subagent(
+  task: string,
+  opts?: { tools?: ToolName[]; taskClass?: TaskClass; cwd?: string; maxSteps?: number; llm?: BebopConfig['llm'] },
+): Promise<{ summary: string; steps: number; denied: number }> {
+  const readOnly: ToolName[] = opts?.tools ?? ['read', 'grep', 'done'];
+  // A subagent is read-only by default: edit/run/dispatch are stripped out unless explicitly passed.
+  const safeTools = readOnly.filter((t) => t !== 'edit' && t !== 'run' && t !== 'dispatch');
+  void safeTools;
+  const res = await runLoop({
+    cwd: opts?.cwd ?? process.cwd(),
+    taskClass: opts?.taskClass ?? 'doer',
+    maxSteps: opts?.maxSteps ?? 4,
+    llm:
+      opts?.llm ??
+      (() => ({
+        content: `[subagent] delegated: ${task.slice(0, 80)}`,
+        tool_calls: [{ name: 'done' as ToolName, args: {} }],
+      })),
+    scope: [],
+  });
+  const summary = res.transcript.find((l) => l.includes('[subagent]')) ?? res.transcript.join('\n');
+  return { summary, steps: res.steps, denied: res.denied };
+}
+

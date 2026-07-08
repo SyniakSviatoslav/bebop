@@ -184,12 +184,16 @@ Hand-rolled JSON-RPC 2.0, **zero new dependencies**. See [docs/integrations/mcp.
 | --- | --- |
 | `bebop boot` | Self-test the guard OS (red-line + scope + certify). The entry point. |
 | `bebop` | Run the interactive agent loop (uses your configured backend). |
+| `bebop run <class> [--plan] [--json]` | Run the loop; `--plan` = read-only; `--json` = headless structured output. |
 | `bebop status` | Show guard OS status, granted scope, red-line config. |
 | `bebop route <task>` | Classify a task and show the routing decision (cheapest adequate backend). |
 | `bebop govern` | Run the telemetry governor on a sample stream; print authority + ICIR. |
 | `bebop recall "<query>"` | Associative recall from living memory. |
 | `bebop node` | Show this node's post-quantum self-certifying identity. |
 | `bebop sync` | Start the optional self-hosted sync server (needs `better-auth`). |
+| `/help · /status · /model · /clear` | Slash commands (run inside an interactive session): help, guard state, routed model, reset memory. |
+| `/plan · /compact · /resume · /skills · /review · /subagent` | Plan-mode note, trim memory, resume session, list skills, run review skill, delegate read-only recon. |
+| `bebop.json` | Optional project config: `model`, `permissions.allow/deny` (globs), `hooks` (PreToolUse deny). |
 
 ---
 
