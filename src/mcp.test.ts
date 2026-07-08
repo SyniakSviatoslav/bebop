@@ -51,3 +51,13 @@ test('RED: unknown method yields method-not-found', () => {
   assert.ok(res.error);
   assert.equal(res.error.code, -32601);
 });
+
+// RED: out-of-range quality samples are clamped + reported (no misleading authority numbers).
+test('RED: bebop_govern clamps out-of-range samples and reports outOfRangeCount', () => {
+  const res = handle({ jsonrpc: '2.0', id: 11, method: 'tools/call', params: { name: 'bebop_govern', arguments: { samples: '-5 1.5 0.9 abc' } } });
+  assert.ok(res.result, 'govern should return a result');
+  const r = JSON.parse(res.result.content[0].text);
+  assert.equal(r.outOfRangeCount, 2, 'two out-of-range samples (-5, 1.5) flagged');
+  // clamped quality: -5 -> 0, 1.5 -> 1, 0.9 stays, 'abc' filtered
+  assert.deepEqual(r.steps.map((s: any) => s.quality), [0, 1, 0.9]);
+});

@@ -106,11 +106,29 @@ function runTool(name: ToolName, args: any, cfg: BebopConfig): { result: string;
 
   switch (name) {
     case 'read':
-      return { result: fs.readFileSync(p, 'utf8').slice(0, 4000), mutated: false, denied: false };
-    case 'grep':
+    case 'grep': {
+      // GUARD GATE — red-line + scope, BEFORE any read (exfiltration of secrets/migrations is denied).
+      const rl = checkRedLine(p, cfg.redLines ?? []);
+      if (!rl.ok) return { result: rl.reason!, mutated: false, denied: true };
+      const sc = checkScope(p, cfg.scope);
+      if (!sc.ok) return { result: sc.reason!, mutated: false, denied: true };
+      if (name === 'read') return { result: fs.readFileSync(p, 'utf8').slice(0, 4000), mutated: false, denied: false };
       return { result: `[grep stub] matched '${args.pattern}' in ${args.path ?? '.'}`, mutated: false, denied: false };
-    case 'run':
-      return { result: `[run stub] would exec: ${args.cmd}`, mutated: false, denied: false };
+    }
+    case 'run': {
+      // GUARD GATE — a run command must not target a red-line area.
+      const cmd = String(args.cmd ?? '');
+      const rl = checkRedLine(cmd, cfg.redLines ?? []);
+      if (!rl.ok) return { result: rl.reason!, mutated: false, denied: true };
+      return { result: `[run stub] would exec: ${cmd}`, mutated: false, denied: false };
+    }
+    case 'dispatch': {
+      // GUARD GATE — the task string is a proxy for the target; red-line tasks are denied BEFORE
+      // any backend runs, for every backend equally (RESEARCH §1.6).
+      const rl = checkRedLine(String(args.task ?? ''), cfg.redLines ?? []);
+      if (!rl.ok) return { result: rl.reason!, mutated: false, denied: true };
+      return { result: '[dispatch stub] would dispatch', mutated: false, denied: false };
+    }
     case 'edit': {
       // GUARD GATE — red-line + scope, BEFORE any write
       const rl = checkRedLine(p, cfg.redLines ?? []);
@@ -142,8 +160,13 @@ function runDispatch(
   cfg: BebopConfig,
   log: Envelope[],
 ): { result: string; backend: Backend; ok: boolean } {
-  // The guard wraps dispatch too (RESEARCH §1.6): a red-line task is denied BEFORE any backend runs,
-  // for every backend equally. We treat the task string as a proxy for the target path check.
+  // GUARD GATE — the task string is a proxy for the target; a red-line task is denied BEFORE any
+  // backend runs, for every backend equally (RESEARCH §1.6).
+  const rl = checkRedLine(task, cfg.redLines ?? []);
+  if (!rl.ok) {
+    log.push({ seq: log.length, cause: causeHash(task), backend: 'denied' as Backend, event: 'denied', detail: rl.reason! });
+    return { result: `[denied] ${rl.reason!}`, backend: 'denied' as Backend, ok: false };
+  }
   const profile = cfg.profile;
   const chosen = cfg.forcedBackend
     ? { backend: cfg.forcedBackend, model: route(cfg.taskClass).model }

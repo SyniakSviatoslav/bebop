@@ -106,14 +106,18 @@ function callTool(name: string, params: any): any {
       const raw = String(params?.samples ?? '');
       const samples = raw.split(/[\s,]+/).map(Number).filter((n: number) => !Number.isNaN(n));
       if (samples.length === 0) return { error: 'no samples provided' };
+      // Validate quality ∈ [0,1] (parity with CLI): clamp + surface a warning so garbage can't
+      // masquerade as authoritative telemetry.
+      const outOfRange = samples.filter((q: number) => q < 0 || q > 1 || !Number.isFinite(q));
+      const qs = samples.map((q: number) => (q < 0 ? 0 : q > 1 ? 1 : q));
       let anomalies = 0;
-      const steps = samples.map((q: number, t: number) => {
-        const predicted = t > 0 ? samples[t - 1] : q;
+      const steps = qs.map((q: number, t: number) => {
+        const predicted = t > 0 ? qs[t - 1] : q;
         const st = gov.step({ t, predictedQuality: predicted, actualQuality: q, cost: 1e-18, volume: 100 });
         if (st.anomaly) anomalies++;
         return { t, quality: q, authority: st.authority, factor: st.factorStatus, resonanceRisky: st.resonanceRisky, anomaly: st.anomaly };
       });
-      return { steps, anomalies, finalAuthority: gov.authority };
+      return { steps, anomalies, finalAuthority: gov.authority, outOfRangeCount: outOfRange.length };
     }
     case 'bebop_route': {
       const cls = (params?.taskClass ?? 'doer') as TaskClass;

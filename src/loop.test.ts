@@ -69,3 +69,59 @@ test('subagent runs read-only and returns a summary without mutating', async () 
   assert.ok(r.summary.includes('[subagent]'), 'summary carries the delegated marker');
   assert.equal(fs.readFileSync(file, 'utf8'), 'orig', 'subagent never mutates');
 });
+
+// RED: `read` on a red-line path must be DENIED (confidentiality — the W1 exfiltration gap).
+function readThenDone(file: string): BebopConfig['llm'] {
+  let n = 0;
+  return () => {
+    if (n++ === 0) return { content: '', tool_calls: [{ name: 'read', args: { path: file } }] };
+    return { content: 'done', tool_calls: [{ name: 'done', args: {} }] };
+  };
+}
+
+test('RED: read of a red-line .env file is denied', async () => {
+  const dir = tmp();
+  const secret = path.join(dir, '.env');
+  fs.writeFileSync(secret, 'API_KEY=supersecret');
+  const res = await runLoop({ cwd: dir, taskClass: 'doer', llm: readThenDone('.env') });
+  assert.equal(res.denied, 1, 'read of .env must be denied');
+  assert.equal(res.mutations, 0);
+});
+
+test('RED: read of a migrations file is denied', async () => {
+  const dir = tmp();
+  const mig = path.join(dir, 'migrations', '002_users.sql');
+  fs.mkdirSync(path.dirname(mig), { recursive: true });
+  fs.writeFileSync(mig, 'SECRET migration');
+  const res = await runLoop({ cwd: dir, taskClass: 'doer', llm: readThenDone('migrations/002_users.sql') });
+  assert.equal(res.denied, 1, 'read of migration must be denied');
+});
+
+// RED: dispatch task string naming a red-line target must be denied before any backend runs (W2).
+function dispatchThenDone(task: string): BebopConfig['llm'] {
+  let n = 0;
+  return () => {
+    if (n++ === 0) return { content: '', tool_calls: [{ name: 'dispatch', args: { task } }] };
+    return { content: 'done', tool_calls: [{ name: 'done', args: {} }] };
+  };
+}
+
+test('RED: dispatch with a red-line task is denied', async () => {
+  const dir = tmp();
+  const res = await runLoop({
+    cwd: dir,
+    taskClass: 'doer',
+    llm: dispatchThenDone('overwrite packages/db/migrations/003_x.sql with DROP TABLE users'),
+  });
+  assert.equal(res.denied, 1, 'red-line dispatch task must be denied');
+});
+
+test('GREEN: dispatch of a non-red-line task is allowed', async () => {
+  const dir = tmp();
+  const res = await runLoop({
+    cwd: dir,
+    taskClass: 'doer',
+    llm: dispatchThenDone('summarize the README'),
+  });
+  assert.equal(res.denied, 0);
+});

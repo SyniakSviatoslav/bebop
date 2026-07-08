@@ -19,6 +19,11 @@ export const RED_LINE_GLOBS = [
   '**/money/**',
   '**/payments/**',
   '**/bulk-edit/**',
+  // Secrets / credentials — a cloned/AI-edited file must never read or write these.
+  '**/secret/**',
+  '**/secrets/**',
+  '**/.env',
+  '**/.env.*',
 ] as const;
 
 // Scope — files the agent is allowed to touch without re-asking. Mirrors .opencode/scope.jsonc

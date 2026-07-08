@@ -318,8 +318,8 @@ async function main() {
     const gov = new Governor(cfg);
     let raw = args.join(' ').trim();
     if (!raw && !process.stdin.isTTY) {
-      // read from stdin (sync, small inputs only)
-      try { raw = require('node:fs').readFileSync(0, 'utf8'); } catch { raw = ''; }
+      // read from stdin (sync, small inputs only) — ESM-safe fs import (no require()).
+      try { raw = fs.readFileSync(0, 'utf8'); } catch { raw = ''; }
     }
     const samples = raw.split(/[\s,]+/).map(Number).filter((n) => !Number.isNaN(n));
     if (samples.length === 0) {
@@ -327,11 +327,19 @@ async function main() {
       console.log(paint.dim('  or:    echo "0.9 0.6 0.2" | bebop govern'));
       return;
     }
+    // Validate quality ∈ [0,1]. Out-of-range values are a SILENT-BAD-STATE weakness: they flow
+    // through and produce authoritative-looking numbers. Clamp + warn so garbage can't masquerade.
+    const outOfRange = samples.filter((q) => q < 0 || q > 1 || !Number.isFinite(q));
+    if (outOfRange.length) {
+      console.log(paint.blood(`  ! ${outOfRange.length} sample(s) out of range [0,1] (${outOfRange.join(', ')}) — clamped.`));
+    }
+    const clamp = (q: number) => (q < 0 ? 0 : q > 1 ? 1 : q);
+    const qs = samples.map(clamp);
     console.log(paint.teal('  t  quality  authority  factor      resonance  anomaly'));
     let anomalies = 0;
-    samples.forEach((q, t) => {
+    qs.forEach((q, t) => {
       // predicted = previous actual (a simple, honest predictor; ICIR measures its skill)
-      const predicted = t > 0 ? samples[t - 1] : q;
+      const predicted = t > 0 ? qs[t - 1] : q;
       const st = gov.step({ t, predictedQuality: predicted, actualQuality: q, cost: 1e-18, volume: 100 });
       if (st.anomaly) anomalies++;
       const flag = st.anomaly ? paint.blood('ANOMALY') : 'ok';
