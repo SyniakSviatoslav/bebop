@@ -31,6 +31,7 @@ import { startSyncServer } from './src/sync-server.ts';
 import { selfMaintain, selfEvolve, recordSession, selfLoop } from './src/consciousness.ts';
 import { createOrUnlock, lock, unlock, loadBlob } from './src/vault.ts';
 import { runMcpServer } from './src/mcp.ts';
+import { playLaunch } from './src/launch.ts';
 import { loadSettings } from './src/settings.ts';
 import { DEFAULT_SCOPE_GLOBS } from './src/guard.ts';
 import { subagent } from './src/loop.ts';
@@ -132,6 +133,7 @@ async function main() {
   }
 
   if (cmd === 'boot') {
+    await playLaunch({ paints: paint });
     const t = selfTest();
     for (const l of t.log) console.log(paint.dim('  · ' + l));
     if (t.ok) {
