@@ -1,0 +1,9 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1783534715, "env": {"SHELL": "/bin/bash", "TERM": "xterm-256color"}, "title": "bebop status"}
+[0.003888, "o", "### bebop status\r\n"]
+[1.140529, "o", "◈ Bebop — your kitchen, your ship, your cut.\r\n"]
+[1.156444, "o", "  rotation: native → free → opencode* → claude* → codex* → hermes* → goose* → aider* → native  (* = not installed / no key)\r\n"]
+[2.672965, "o", "  · native    ready\r\n  · free      idle\r\n  · opencode  idle\r\n  · claude    idle\r\n"]
+[2.673124, "o", "  · codex     idle\r\n"]
+[2.673368, "o", "  · hermes    idle\r\n"]
+[2.673728, "o", "  · goose     idle\r\n"]
+[2.673901, "o", "  · aider     idle\r\n  · native    ready\r\n"]

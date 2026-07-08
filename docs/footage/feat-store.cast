@@ -1,0 +1,3 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1783533996, "env": {"SHELL": "/bin/bash", "TERM": "xterm-256color"}, "title": "bebop store"}
+[0.009242, "o", "### bebop store\r\n"]
+[1.184099, "o", "  store dir=/root/bebop-repo/.bebop/store events=0 chainOk=true\r\n"]

@@ -53,3 +53,20 @@ and selects among them. The CLI shows this with `bebop status` and `bebop route 
 
 All backends report usage into one ledger (`token.ts`) so you get a single, comparable cost view
 across models and providers — no per-backend accounting drift.
+
+## ▶ Live CLI
+
+> Real `bebop` output, recorded with [asciinema](https://asciinema.org) → [agg](https://github.com/asciinema/agg) (no staging, no post-editing).
+
+**bebop agents — every agentic CLI Bebop can drive**
+
+![bebop agents — every agentic CLI Bebop can drive](../footage/feat-agents.gif)
+
+**bebop use native — switch the active backend**
+
+![bebop use native — switch the active backend](../footage/feat-use.gif)
+
+**bebop status — rotation + connection health**
+
+![bebop status — rotation + connection health](../footage/feat-status.gif)
+

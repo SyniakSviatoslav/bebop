@@ -46,3 +46,12 @@ real P2P backend is a swap, not a rewrite.
 - **Tamper-evident** — content addressing means you can't lie about what you sent.
 - **Falsifiable** — `core.test.ts` asserts a piece's hash matches (GREEN) and that a corrupted
   piece is rejected (RED). (Kernel, torrent, and mesh are exercised together in `core.test.ts`.)
+
+## ▶ Live CLI
+
+> Real `bebop` output, recorded with [asciinema](https://asciinema.org) → [agg](https://github.com/asciinema/agg) (no staging, no post-editing).
+
+**bebop store — content-addressed mesh pieces**
+
+![bebop store — content-addressed mesh pieces](../footage/feat-store.gif)
+

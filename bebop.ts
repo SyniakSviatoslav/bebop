@@ -10,6 +10,8 @@
 //   use <backend>   switch the default agent directly (e.g. bebop use claude / opencode / free)
 //   recall <q>      query the living-knowledge §0·GP retriever
 //   route <class>   show the token-router decision (doer/reason/redline)
+//   map [module]    "understand everything" — render the real import graph as an SVG image
+//   diagrams        regenerate every visual (project map + conceptual feature schemas)
 //   help            this text
 
 import path from 'node:path';
@@ -40,6 +42,8 @@ import { subagent } from './src/loop.ts';
 import { loadSkills, findSkill } from './src/skills.ts';
 import { initCore } from './src/core-wasm.ts';
 import { setKernel } from './src/guard.ts';
+import { buildGraph, renderSvg } from './src/understand.ts';
+import { flowSchema, FEATURE_SCHEMAS } from './src/schema.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -136,7 +140,8 @@ async function main() {
     console.log(banner(paint));
     console.log(paint.dim('  boot | init [--preset bebop|--json {...}] | status | agents | use <backend>'));
     console.log(paint.dim('  run [doer|reason|redline] | dispatch "<task>" | route <class> | recall <query>'));
-    console.log(paint.dim('  govern "<q,...>" | self [maintain|evolve|session|loop] | node | sync [--port N] | mcp | help'));
+    console.log(paint.dim('  govern "<q,..>" | self [maintain|evolve|session|loop] | node | sync [--port N]'));
+    console.log(paint.dim('  map [module] | diagrams | mcp | help'));
     console.log(paint.dim(`  ${BOOT.link}`));
     return;
   }
@@ -219,6 +224,45 @@ async function main() {
     const r = recall(q);
     console.log(paint.dim(`  §0·GP recall — ${r.note}`));
     for (const h of r.hits) console.log(paint.teal(`  ◈ ${h.id}: ${h.text.slice(0, 100)}`));
+    return;
+  }
+
+  if (cmd === 'map') {
+    // "understand everything": render the real import graph as an SVG image.
+    const focusStem = args[0]; // optional: focus a module (e.g. `bebop map guard`)
+    const outDir = path.join(HERE, 'docs', 'diagrams');
+    fs.mkdirSync(outDir, { recursive: true });
+    const graph = buildGraph(HERE);
+    const focus = focusStem
+      ? graph.nodes
+          .filter((n) => n.stem === focusStem || n.id.endsWith(`/${focusStem}.ts`))
+          .map((n) => n.id)
+      : [];
+    const svg = renderSvg(graph, {
+      focus: focus.length ? focus : undefined,
+      title: focusStem ? `Bebop map — focus: ${focusStem}` : 'Bebop project map (real imports)',
+    });
+    const outFile = path.join(outDir, focusStem ? `map-${focusStem}.svg` : 'project-map.svg');
+    fs.writeFileSync(outFile, svg);
+    console.log(paint.teal(`  ◈ wrote ${outFile}`));
+    console.log(paint.dim(`  ${graph.nodes.length} modules, ${graph.edges.length} real import edges`));
+    return;
+  }
+
+  if (cmd === 'diagrams') {
+    // Regenerate EVERY visual: the real import graph + all conceptual feature schemas.
+    const outDir = path.join(HERE, 'docs', 'diagrams');
+    fs.mkdirSync(outDir, { recursive: true });
+    const graph = buildGraph(HERE);
+    fs.writeFileSync(path.join(outDir, 'project-map.svg'), renderSvg(graph, { title: 'Bebop project map (real imports)' }));
+    let n = 1;
+    for (const [name, def] of Object.entries(FEATURE_SCHEMAS)) {
+      fs.writeFileSync(path.join(outDir, `schema-${name}.svg`), flowSchema(def.steps, { title: def.title }));
+      n++;
+    }
+    console.log(paint.teal(`  ◈ wrote docs/diagrams/project-map.svg`));
+    console.log(paint.teal(`  ◈ wrote ${n - 1} conceptual schemas (schema-*.svg)`));
+    console.log(paint.dim(`  graph: ${graph.nodes.length} modules, ${graph.edges.length} real edges`));
     return;
   }
 

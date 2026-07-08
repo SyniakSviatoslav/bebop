@@ -1,6 +1,6 @@
 {
   "name": "bebop-agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Bebop — your own coding agent. Warm cosmo-noir, a deterministic guard OS, living memory, post-quantum node identity, and a math-proven telemetry governor. AGPL-3.0.",
   "license": "AGPL-3.0-or-later",
   "type": "module",

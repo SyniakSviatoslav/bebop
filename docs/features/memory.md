@@ -41,3 +41,20 @@ so stale tokens fade — a forgetting clock you can advance with `bebop memory t
 
 If the optional `spikes/` / `tools/vsa/` knowledge scripts are absent, memory falls back to
 in-process storage. It never crashes on a missing external tool — verified by `memory.test.ts`.
+
+## ▶ Live CLI
+
+> Real `bebop` output, recorded with [asciinema](https://asciinema.org) → [agg](https://github.com/asciinema/agg) (no staging, no post-editing).
+
+**bebop remember — write a concept into living memory**
+
+![bebop remember — write a concept into living memory](../footage/feat-remember.gif)
+
+**bebop recall — query in-process memory (VSA retriever not bundled; honest)**
+
+![bebop recall — query in-process memory (VSA retriever not bundled; honest)](../footage/feat-recall.gif)
+
+**bebop memory — inspect the memory store**
+
+![bebop memory — inspect the memory store](../footage/feat-memory.gif)
+

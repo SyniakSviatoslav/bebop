@@ -1,0 +1,8 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1783533679, "env": {"SHELL": "/bin/bash", "TERM": "xterm-256color"}, "title": "bebop govern 0.9,0.6,0.2,0.95"}
+[0.008198, "o", "### bebop govern 0.9,0.6,0.2,0.95\r\n"]
+[1.196921, "o", "  t  quality  authority  factor      resonance  anomaly\r\n"]
+[1.197291, "o", "   0 0.90     0.000     unknown    ok        ok\r\n"]
+[1.197307, "o", "   1 0.60     0.936     unknown    ok        ok\r\n"]
+[1.19742, "o", "   2 0.20     1.000     unknown    ok        ok\r\n"]
+[1.197639, "o", "   3 0.95     0.000     unknown    ok        ok\r\n"]
+[1.197651, "o", "  → 4 samples, 0 anomaly signal(s); final authority=0.000\r\n"]

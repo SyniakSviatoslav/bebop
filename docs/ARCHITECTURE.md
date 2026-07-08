@@ -1,5 +1,9 @@
 # Bebop Architecture
 
+> 📖 **Read time:** ~6 min · 🎧 **Listen:** [architecture narration (mp3)](narration/architecture-narration.mp3)
+> + [transcript](narration/architecture-narration.md) · 🤖 **For agents:** facts also in
+> [`llm-manifest.json`](../llm-manifest.json).
+
 Bebop is a TypeScript agent shell over a **self-contained Rust/WASM guard kernel**. The shell owns
 all cross-cutting policy; agents are interchangeable dumb executors behind a uniform envelope.
 
@@ -106,6 +110,6 @@ stale installs comply with the free-default promise.
 ```bash
 cd crates/core && bash build.sh     # wasm32 → src/bebop_core.wasm
 cargo test -p bebop-core             # 7 Rust RED+GREEN tests
-npm run lint && npm run typecheck && npm test   # 159 TS tests
+npm run typecheck && npm test            # 165 TS tests
 bebop boot                           # live guard self-test
 ```

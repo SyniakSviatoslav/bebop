@@ -1,0 +1,69 @@
+{
+  "$schema": "https://docs.bebop.dev/schemas/mcp-tools.json",
+  "server": { "name": "bebop", "version": "0.1.0", "transport": "stdio", "protocol": "JSON-RPC 2.0" },
+  "note": "Authoritative tool list mirrors src/mcp.ts (TOOLS array). Every field here was read from the source, not invented.",
+  "tools": [
+    {
+      "name": "bebop_boot",
+      "description": "Run the guard-OS self-certification. Returns whether the gates deny on red and pass on green. Refuses to lie.",
+      "inputSchema": { "type": "object", "properties": {} },
+      "returns": { "ok": "boolean", "log": "string[]", "certified": "boolean" }
+    },
+    {
+      "name": "bebop_recall",
+      "description": "Associative recall from Bebop living memory (Vector Symbolic Architecture). Returns nearest concepts. NOTE: the VSA embedding retriever is NOT bundled; recall is in-process living memory only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "The recall query." },
+          "k": { "type": "number", "description": "Number of nearest hits (default 5)." }
+        },
+        "required": ["query"]
+      },
+      "returns": { "note": "string", "hits": "array" }
+    },
+    {
+      "name": "bebop_remember",
+      "description": "Write a concept into living memory. Returns the memory id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "concept": { "type": "string", "description": "Concept name." },
+          "payload": { "type": "string", "description": "The payload to remember." }
+        },
+        "required": ["concept", "payload"]
+      },
+      "returns": { "id": "string", "size": "number" }
+    },
+    {
+      "name": "bebop_govern",
+      "description": "Run the math-proven telemetry governor over a quality stream (0..1). Returns per-step authority, factor health, resonance risk, anomalies.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "samples": { "type": "string", "description": "Comma/space-separated quality samples 0..1, e.g. \"0.9,0.6,0.2,0.95\"." }
+        },
+        "required": ["samples"]
+      },
+      "returns": { "steps": "array", "anomalies": "number", "finalAuthority": "number", "outOfRangeCount": "number" }
+    },
+    {
+      "name": "bebop_route",
+      "description": "Classify a task and return the cheapest-adequate backend routing decision.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "taskClass": { "type": "string", "enum": ["doer", "reason", "redline"], "description": "Task class (doer=cheap, reason=mid, redline=opus)." }
+        },
+        "required": ["taskClass"]
+      },
+      "returns": { "taskClass": "string", "model": "string", "rationale": "string", "enforced": "boolean", "note": "string" }
+    },
+    {
+      "name": "bebop_self_maintain",
+      "description": "Run Bebop self-maintenance (test harness + invariant check). Returns health summary.",
+      "inputSchema": { "type": "object", "properties": {} },
+      "returns": { "ok": "boolean", "pass": "number", "fail": "number" }
+    }
+  ]
+}

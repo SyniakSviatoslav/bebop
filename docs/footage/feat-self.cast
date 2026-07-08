@@ -1,0 +1,3 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1783533791, "env": {"SHELL": "/bin/bash", "TERM": "xterm-256color"}, "title": "bebop self maintain"}
+[0.007621, "o", "### bebop self maintain\r\n"]
+[6.442239, "o", "  self-maintain ok=true pass=165 fail=0\r\n"]

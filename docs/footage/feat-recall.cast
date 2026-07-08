@@ -1,0 +1,3 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1783533773, "env": {"SHELL": "/bin/bash", "TERM": "xterm-256color"}, "title": "bebop recall \"guard kernel\""}
+[0.007635, "o", "### bebop recall guard kernel\r\n"]
+[1.160986, "o", "  §0·GP recall — in-process livingMemory only (living-knowledge retriever not bundled in this repo)\r\n"]

@@ -1,0 +1,4 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1783533782, "env": {"SHELL": "/bin/bash", "TERM": "xterm-256color"}, "title": "bebop node"}
+[0.003721, "o", "### bebop node\r\n"]
+[1.282012, "o", "  node id=b61cffd315aa99bfb7c4e5b8… (encrypted vault /root/bebop-repo/.bebop/node.vault.json)\r\n  pqPublic=e81e6d103cd0ddea4692c395… edPublic=07a638ef09cc39e0…"]
+[1.282487, "o", "\r\n"]

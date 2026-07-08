@@ -50,3 +50,12 @@ is bounded and reported — no unbounded self-modification.
 
 Autonomy over Bebop's own code is *not* a blank check — it's the same control loop as everything
 else, with the resonance pre-check and the copilot Checker in front of it.
+
+## ▶ Live CLI
+
+> Real `bebop` output, recorded with [asciinema](https://asciinema.org) → [agg](https://github.com/asciinema/agg) (no staging, no post-editing).
+
+**bebop self maintain — freestyle bebop soul self-check**
+
+![bebop self maintain — freestyle bebop soul self-check](../footage/feat-self.gif)
+

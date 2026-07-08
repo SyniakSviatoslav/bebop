@@ -1,0 +1,3 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1783533767, "env": {"SHELL": "/bin/bash", "TERM": "xterm-256color"}, "title": "bebop dispatch \"add a health check to the guard\""}
+[0.008601, "o", "### bebop dispatch add a health check to the guard\r\n"]
+[1.31634, "o", "  [doer=native checker=native] native handled: add a health check to the guard\r\n  copilot verdict: approve | governor authority=1.000 (factor=unknown, resonance=ok)\r\n"]

@@ -1,0 +1,119 @@
+{
+  "$schema": "https://docs.bebop.dev/schemas/llm-manifest.json",
+  "name": "bebop",
+  "title": "Bebop — your own coding agent",
+  "version": "0.2.0",
+  "description": "Standalone AGPL-3.0 coding-agent CLI that drives any connected agentic CLI (Claude Code, Codex, OpenCode, Hermes, Aider, Goose, or a free LLM) behind one Rust/WASM guard kernel. Free LLM by default; one control surface for every agent; a fail-closed, testable guard; docs where every statement is backed by a live probe or a deterministic test.",
+  "license": "AGPL-3.0-or-later",
+  "runtime": { "node": ">=20.19.0", "recommended": "22 LTS", "rust": "optional (wasm artifact committed)" },
+  "repository": "https://github.com/SyniakSviatoslav/bebop",
+  "brand": { "name": "Warm Cosmo-Noir", "signal_color": "#46B0A4" },
+  "verification": {
+    "rule": "Constant Doubt — no verification, no statement",
+    "ts_tests": 165,
+    "rust_tests": 7,
+    "tsc_errors": 0,
+    "matrix": "docs/VERIFICATION-MATRIX.md"
+  },
+  "architecture": {
+    "shell": "TypeScript (Node)",
+    "kernel": "Rust compiled to WebAssembly (crates/core → src/bebop_core.wasm)",
+    "kernel_abi": "hand-rolled C-ABI, no wasm-bindgen",
+    "layers": ["shell", "guard", "core", "routing", "agent", "memory", "mesh", "platform"],
+    "policy_owned_by_shell": ["guard", "token-router", "copilot", "memory", "governor"],
+    "agents_are": "thin adapters (dumb executors)"
+  },
+  "commands": [
+    { "name": "boot", "summary": "Guard self-test; refuses to start if gates can't go RED." },
+    { "name": "init", "summary": "5-axis personalization wizard → ~/.bebop/settings.json." },
+    { "name": "status", "summary": "Agent rotation + connection status (free first by default)." },
+    { "name": "agents", "summary": "List every agentic CLI Bebop can drive, with live status." },
+    { "name": "use", "args": "<backend>", "summary": "Switch default agent; persists; refuses unconnected unless --force." },
+    { "name": "run", "args": "[doer|reason|redline]", "summary": "Full agentic loop; routes task class to cheapest adequate lane." },
+    { "name": "dispatch", "args": "\"<task>\"", "summary": "One-shot task through guard + copilot; red-line denied before any agent runs." },
+    { "name": "route", "args": "<class>", "summary": "Show token-router decision for a task class." },
+    { "name": "recall", "args": "<query>", "summary": "Query in-process living memory only (VSA retriever NOT bundled; honest).", "status": "partial" },
+    { "name": "remember", "summary": "Write a concept into the living memory." },
+    { "name": "memory", "summary": "Inspect the living memory." },
+    { "name": "store", "summary": "Inspect the content-addressed store." },
+    { "name": "govern", "args": "\"<q,...>\"", "summary": "L5 telemetry governor (PID + ICIR + resonance) over a quality stream." },
+    { "name": "self", "args": "[maintain|evolve|session|loop]", "summary": "Self-maintenance / self-evolution (fail-closed, reversible)." },
+    { "name": "node", "summary": "Encrypted-at-rest node identity (PQ + Ed25519)." },
+    { "name": "sync", "args": "[--port N]", "summary": "Optional self-hosted Better Auth sync server." },
+    { "name": "map", "args": "[module]", "summary": "Render the real import graph as an SVG image." },
+    { "name": "diagrams", "summary": "Regenerate every SVG visual (project map + conceptual schemas)." },
+    { "name": "mcp", "summary": "Model Context Protocol server over stdio (zero new deps)." },
+    { "name": "help", "summary": "Command list." }
+  ],
+  "features": [
+    { "id": "guard", "name": "Guard OS", "verified": true, "doc": "docs/features/guard-os.md", "schema": "docs/diagrams/schema-guard.svg" },
+    { "id": "kernel", "name": "Deterministic kernel & content-addressed log", "verified": true, "doc": "docs/features/kernel.md", "schema": "docs/diagrams/schema-kernel.svg" },
+    { "id": "governor", "name": "Telemetry governor", "verified": true, "doc": "docs/features/governor.md", "schema": "docs/diagrams/schema-governor.svg" },
+    { "id": "memory", "name": "Living memory (VSA)", "verified": true, "doc": "docs/features/memory.md", "schema": "docs/diagrams/schema-memory.svg" },
+    { "id": "identity", "name": "Post-quantum identity & vault", "verified": true, "doc": "docs/features/identity.md", "schema": "docs/diagrams/schema-identity.svg" },
+    { "id": "mesh", "name": "No-central-server mesh", "verified": true, "doc": "docs/features/mesh.md", "schema": "docs/diagrams/schema-mesh.svg" },
+    { "id": "consciousness", "name": "Freestyle bebop soul (self loop)", "verified": true, "doc": "docs/features/consciousness.md", "schema": "docs/diagrams/schema-consciousness.svg" }
+  ],
+  "backends": ["free", "opencode", "claude", "codex", "hermes", "goose", "aider", "native"],
+  "free_llm": {
+    "default_backend": "free",
+    "provider": "OpenRouter free tier",
+    "env": ["OPENROUTER_API_KEY", "OPENROUTER_FREE_KEY"],
+    "fallback": "native (keyless deterministic stub) — never hard-blocks"
+  },
+  "security_model": {
+    "project_bebop_json": "untrusted; may set ONLY 'model'",
+    "permissions_hooks_from": "~/.bebop/settings.json (user-owned, trusted)",
+    "hooks": "shell-less; commands with metacharacters are refused",
+    "red_line_globs": ["**/auth/**", "**/migrations/**", "**/rls/**", "**/*.sql", "**/packages/db/migrations/**", "**/money/**", "**/payments/**", "**/bulk-edit/**", "**/secret/**", "**/secrets/**", "**/.env", "**/.env.*"],
+    "scope_globs": ["tools/bebop/**", "docs/design/dowiz-agent-cli/**"],
+    "enforced_by": "Rust/WASM kernel (bebop_core.wasm)"
+  },
+  "limitations": [
+    "NOT a model provider (drives models, does not train/host them)",
+    "NOT a sandbox / OS-level container (policy gate only; run agents with least privilege)",
+    "NOT a bundled VSA retriever (recall is in-process living memory only; states this honestly)",
+    "NOT a GUI (terminal CLI only)",
+    "NOT a replacement for human review of money/auth/RLS changes",
+    "NOT multi-user / NOT a hosted service (one user, one local process)",
+    "NOT a build system, package manager, or CI runner",
+    "does NOT guarantee task success"
+  ],
+  "dependencies": {
+    "@noble/ciphers": "^2.2.0",
+    "@noble/curves": "^2.2.0",
+    "@noble/hashes": "^2.2.0",
+    "@noble/post-quantum": "^0.6.1"
+  },
+  "scripts": {
+    "build": "cd crates/core && bash build.sh",
+    "test": "node --test --import tsx src/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "accessibility": {
+    "narration_dir": "docs/narration/",
+    "files": [
+      { "audio": "docs/narration/README-narration.mp3", "transcript": "docs/narration/README-narration.md" },
+      { "audio": "docs/narration/architecture-narration.mp3", "transcript": "docs/narration/architecture-narration.md" },
+      { "audio": "docs/narration/limitations-narration.mp3", "transcript": "docs/narration/limitations-narration.md" }
+    ]
+  },
+  "localization": {
+    "github_native_translate": false,
+    "convention": "README.<lang>.md in repo root (GitHub shows a language switcher)",
+    "translations": [
+      { "lang": "uk", "file": "README.uk.md", "status": "hand-reviewed" }
+    ],
+    "autotranslate_script": "scripts/i18n-translate.mjs",
+    "engines": [
+      { "name": "LibreTranslate", "license": "AGPL-3.0", "self_host": "docker run -d -p 5000:5000 libretranslate/libretranslate" },
+      { "name": "Argos Translate", "license": "Apache-2.0", "self_host": "pip install argos-translate && argos-translate --install en_<lang>", "offline": true }
+    ],
+    "notes": "Browser-native translate (Firefox Translations is fully local/OSS) works on rendered pages. Machine drafts are stamped MACHINE TRANSLATED DRAFT and are NOT authoritative; English is source of truth."
+  },
+  "machine_artifacts": {
+    "index": "llms.txt",
+    "manifest": "llm-manifest.json",
+    "mcp_tools": "docs/mcp-tools.json"
+  }
+}

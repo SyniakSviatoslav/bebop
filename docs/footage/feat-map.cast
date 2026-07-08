@@ -1,0 +1,3 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1783533785, "env": {"SHELL": "/bin/bash", "TERM": "xterm-256color"}, "title": "bebop map"}
+[0.008555, "o", "### bebop map\r\n"]
+[1.195806, "o", "  ◈ wrote /root/bebop-repo/docs/diagrams/project-map.svg\r\n  35 modules, 71 real import edges\r\n"]

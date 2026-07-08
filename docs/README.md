@@ -4,6 +4,11 @@ Welcome to the Bebop wiki. Bebop is a self-hostable coding agent with a determin
 operating system, living memory, post-quantum node identity, and a math-proven telemetry
 governor. This wiki explains each subsystem in detail so you can fork, extend, and trust it.
 
+> 📖 **For agents/bots:** the repo ships a machine-readable index — [`llms.txt`](../llms.txt) and
+> structured [`llm-manifest.json`](../llm-manifest.json) at the root. Each fact there is reproducible.
+> 🎧 Audio narrations (incl. transcripts) live in [`docs/narration/`](narration/).
+> 🎬 Live CLI footage (real asciinema recording → GIF) and how to reproduce it: [`docs/footage/`](footage/).
+
 ## Start here
 - [Getting started](./getting-started.md) — install, run, configure.
 - [Architecture](./ARCHITECTURE.md) — the layers, the Rust/WASM guard kernel, the determinism contract, "as above so below".
@@ -25,4 +30,7 @@ governor. This wiki explains each subsystem in detail so you can fork, extend, a
 
 ## Project
 - [Contributing](../CONTRIBUTING.md) · [Governance](../GOVERNANCE.md) · [DCO](../DCO.md) · [Security](../SECURITY.md)
+- [Verification matrix](./VERIFICATION-MATRIX.md) — every feature probed live (Constant Doubt).
+- [Constant Doubt rule](./RULES.md) — no verification, no statement.
+- [Internationalization](./i18n.md) — README.<lang>.md convention + free OSS auto-translate.
 - [License](../LICENSE) — AGPL-3.0-or-later.

@@ -15,7 +15,7 @@ git clone https://github.com/SyniakSviatoslav/bebop.git
 cd bebop
 npm install         # core deps only
 npm run boot
-npm test            # 159 falsifiable tests
+npm test            # 165 falsifiable tests
 ```
 
 To enable optional multi-device sync later:
@@ -54,3 +54,16 @@ Bebop reads configuration from **environment variables** (it never loads cloud k
 `bebop boot` runs the **guard-OS self-certification**: it asserts the gate *denies on red* and
 *passes on green*. If the gate can't be proven to block the bad cases, Bebop refuses to run
 autonomously. This is the load-bearing safety check — run it after every change.
+
+## ▶ Live CLI
+
+> Real `bebop` output, recorded with [asciinema](https://asciinema.org) → [agg](https://github.com/asciinema/agg) (no staging, no post-editing).
+
+**bebop boot — first run, guard self-test**
+
+![bebop boot — first run, guard self-test](footage/feat-boot.gif)
+
+**bebop init --preset bebop — personalize on 5 axes**
+
+![bebop init --preset bebop — personalize on 5 axes](footage/feat-init.gif)
+

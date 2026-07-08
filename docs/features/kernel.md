@@ -41,3 +41,16 @@ event[n].hash = H(event[n].payload || event[n-1].hash)
 - **Falsifiability** — a corrupt log fails `verifyChain()`; a bad transition fails the Checker.
   Both are asserted by `store.test.ts` and `core.test.ts`.
 - **No central server** — the log is just bytes; any node can hold a copy and verify it.
+
+## ▶ Live CLI
+
+> Real `bebop` output, recorded with [asciinema](https://asciinema.org) → [agg](https://github.com/asciinema/agg) (no staging, no post-editing).
+
+**bebop dispatch — decide() gates, then fold() applies through the Checker**
+
+![bebop dispatch — decide() gates, then fold() applies through the Checker](../footage/feat-dispatch.gif)
+
+**bebop map — real import graph of the kernel and its neighbours**
+
+![bebop map — real import graph of the kernel and its neighbours](../footage/feat-map.gif)
+

@@ -45,3 +45,12 @@ bebop node
 # node id=◈… (encrypted vault .bebop/node.vault.json)
 # pqPublic=… edPublic=…
 ```
+
+## ▶ Live CLI
+
+> Real `bebop` output, recorded with [asciinema](https://asciinema.org) → [agg](https://github.com/asciinema/agg) (no staging, no post-editing).
+
+**bebop node — post-quantum identity + encrypted vault**
+
+![bebop node — post-quantum identity + encrypted vault](../footage/feat-node.gif)
+

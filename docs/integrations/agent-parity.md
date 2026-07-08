@@ -51,3 +51,12 @@ kernel, governor, and living memory are the substrate; the patterns below are na
 Every capability ships with a RED+GREEN test: settings deny overrides scope; a PreToolUse hook
 can deny (RED) and allow (GREEN); plan mode blocks edits; headless emits JSON; subagent runs
 read-only; skill loads. `tsc` clean; full suite green on both install paths.
+
+## ▶ Live CLI
+
+> Real `bebop` output, recorded with [asciinema](https://asciinema.org) → [agg](https://github.com/asciinema/agg) (no staging, no post-editing).
+
+**bebop agents — parity with Claude Code / Hermes via adapters**
+
+![bebop agents — parity with Claude Code / Hermes via adapters](../footage/feat-agents.gif)
+

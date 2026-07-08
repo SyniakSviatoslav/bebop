@@ -1,0 +1,6 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1783533779, "env": {"SHELL": "/bin/bash", "TERM": "xterm-256color"}, "title": "bebop memory"}
+[0.00857, "o", "### bebop memory\r\n"]
+[1.228374, "o", "  living memory size=14\r\n"]
+[1.228492, "o", "  layers: working=0 short=2 long=12\r\n"]
+[1.229073, "o", "  nearest to \"copilot\": [{\"id\":\"04e7b617f59dbc01bf891859533f76cada1bc4109d2a52b6cb9246f015fc2927\",\"sim\":0.8115234375},{\"id\":\"006c47e390135d62c413a3d9d9925f95e89ec97ab51fe512844fb80c3a162f96\",\"sim\":0.8095703125},{\"id\":\"d48281bb71051e1d4c5702b27110fe4319253a97bb0d944933500a49470e05e2\",\"sim\":0.6953125}]\r\n"]
+[1.229327, "o", "  recall \"copilot\": [\"04e7b617f59dbc01bf891859533f76cada1bc4109d2a52b6cb9246f015fc2927\",\"4e4d77ae5858cbb342600c4111331fe363ca953ad12ea79a0847331a7227f8b4\",\"89a0ac2bb562c88f3bde6a3d05f824efb865c4b0d06729e236fe340b19638f29\",\"3b2603c5d80ce902763aa2da2c7140322d2373fdfa9391aea80abf4857ffac09\",\"cbe3815b6d02834aa02cab766858ba06a5311d4a376539b9ccb18e1e8c29b99c\",\"4c563c78496f6080caaebbb5f5f67b32fba5954e05fece5117202be8cbb65e0b\",\"7cd7d3bb9648d723de044c9842a10fc77401a8bac82cf675589e8c4aaf230d45\",\"ac1935c3a263770277980cfdf80407c89a038e2949802c7fcb5fcf310a0613e1\",\"377a6f50a628e91ea65f074ebaa1a885ae150fb5390dc77fcbd0e816a5d526b3\"]\r\n"]

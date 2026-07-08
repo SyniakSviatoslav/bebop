@@ -73,3 +73,12 @@ unhandled crash.
 
 Add a `tool(...)` descriptor to `TOOLS` and a `case` in `callTool()` in `src/mcp.ts`. Delegate to
 a pure module. Add a RED+GREEN test in `mcp.test.ts`. Done.
+
+## ▶ Live CLI
+
+> Real `bebop` output, recorded with [asciinema](https://asciinema.org) → [agg](https://github.com/asciinema/agg) (no staging, no post-editing).
+
+**bebop mcp — Model Context Protocol server over stdio**
+
+![bebop mcp — Model Context Protocol server over stdio](../footage/feat-mcp.gif)
+

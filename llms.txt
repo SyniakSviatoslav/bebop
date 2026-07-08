@@ -1,0 +1,53 @@
+# Bebop
+
+> Bebop is a standalone, AGPL-3.0 coding-agent CLI that drives any connected agentic CLI (Claude
+> Code, Codex, OpenCode, Hermes, Aider, Goose, or a free LLM) behind one Rust/WASM guard kernel.
+> Free LLM by default; one control surface for every agent; a fail-closed, testable guard; and docs
+> where every statement is backed by a live probe or a deterministic test (Constant Doubt rule).
+
+## What it is
+- A TypeScript shell over a Rust/WASM guard kernel (`crates/core` → `src/bebop_core.wasm`).
+- An abstraction ABOVE other agents: the intelligence (guard, router, copilot, memory, governor) is Bebop's; agents are thin, swappable executors.
+- NOT a model provider, NOT a sandbox, NOT a GUI, NOT multi-user. See limitations below.
+
+## Facts (verified, not claimed)
+- TS tests: 165 passing (`npm test`, native `node --test`).
+- Rust kernel tests: 7 passing (`cargo test -p bebop-core`).
+- `tsc --noEmit`: 0 errors.
+- License: AGPL-3.0-or-later. Runtime: Node 22 LTS.
+- Guard denies red-line globs (auth / money / migrations / secrets / `.env`) unless human-approved. `bebop boot` proves gates deny-on-red, pass-on-green.
+- Free LLM default: OpenRouter free tier; falls back to a keyless native loop when no key.
+
+## Commands (top level)
+`boot` · `init` · `status` · `agents` · `use <backend>` · `run [doer|reason|redline]` · `dispatch "<task>"` · `route <class>` · `recall <query>` · `remember` · `memory` · `store` · `govern "<q,...>"` · `self [maintain|evolve|session|loop]` · `node` · `sync [--port N]` · `map [module]` · `diagrams` · `mcp` · `help`
+See [docs/commands.md](docs/commands.md) for the full reference.
+
+## Documentation (detailed)
+- [README.md](README.md) — story, business pain-relief, comparison, limitations, verification.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — layers, Rust/WASM kernel, determinism contract.
+- [docs/VERIFICATION-MATRIX.md](docs/VERIFICATION-MATRIX.md) — 35-row proof that every feature works live.
+- [docs/RULES.md](docs/RULES.md) — Constant Doubt: no verification, no statement.
+- [docs/features/guard-os.md](docs/features/guard-os.md) — the fail-closed gate.
+- [docs/features/kernel.md](docs/features/kernel.md) — decide / fold / replay event sourcing.
+- [docs/features/governor.md](docs/features/governor.md) — PID + ICIR + resonance telemetry loop.
+- [docs/features/memory.md](docs/features/memory.md) — Vector Symbolic Architecture living memory.
+- [docs/features/identity.md](docs/features/identity.md) — post-quantum (ML-KEM + Ed25519) node identity & vault.
+- [docs/features/mesh.md](docs/features/mesh.md) — content-addressed, verified peer transport.
+- [docs/features/consciousness.md](docs/features/consciousness.md) — self-maintenance / self-evolution.
+- [docs/integrations/mcp.md](docs/integrations/mcp.md) — MCP server (stdio, zero new deps).
+- [docs/integrations/backends.md](docs/integrations/backends.md) — bring-your-own model routing.
+- [docs/diagrams/](docs/diagrams/) — SVG project map + per-feature schemas (generate via `bebop diagrams`).
+
+## Machine-readable artifacts
+- [llm-manifest.json](llm-manifest.json) — structured facts: commands, features with verification status, limitations, dependency hashes.
+- [docs/mcp-tools.json](docs/mcp-tools.json) — MCP tool schemas for agent-to-agent integration.
+- [docs/i18n.md](docs/i18n.md) — how docs are localized (README.<lang>.md + free OSS auto-translate).
+- [docs/narration/](docs/narration/) — audio + text transcripts of the README (accessibility).
+
+## Limitations (stated plainly)
+Bebop is NOT a model provider, NOT a sandbox/OS-level container, NOT a bundled VSA retriever (recall is in-process only and says so), NOT a GUI, NOT a replacement for human review of money/auth/RLS, NOT multi-user / not a hosted service, NOT a build system, and does NOT guarantee task success. Full text: [README "What Bebop is NOT"](README.md#what-bebop-is-not-limitations--stated-plainly).
+
+## For agents ingesting this repo
+Parse [llm-manifest.json](llm-manifest.json) for structured data; use [llms.txt](llms.txt) (this file)
+as the entry index. Every factual claim in the docs is reproducible by running `npm test`,
+`cargo test -p bebop-core`, and the probes listed in [docs/VERIFICATION-MATRIX.md](docs/VERIFICATION-MATRIX.md).

@@ -1,0 +1,3 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1783533976, "env": {"SHELL": "/bin/bash", "TERM": "xterm-256color"}, "title": "bebop mcp"}
+[0.00561, "o", "### bebop mcp\r\n"]
+[1.194087, "o", "  ◈ Bebop MCP server starting on stdio (JSON-RPC 2.0). Close stdin to stop.\r\n"]

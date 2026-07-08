@@ -1,0 +1,4 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1783533990, "env": {"SHELL": "/bin/bash", "TERM": "xterm-256color"}, "title": "bebop init --preset bebop"}
+[0.008268, "o", "### bebop init --preset bebop\r\n"]
+[1.272931, "o", "  ✓ Profile written → /root/.bebop/settings.json\r\n  origin=hybrid class=multi narration=bebop patrons=hybrid looks=bebop\r\n"]
+[1.29804, "o", "  backend rotation: native → free → opencode* → claude* → codex* → hermes* → goose* → aider* → native\r\n  Custom profile engaged.\r\n"]

@@ -1,0 +1,3 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1783533776, "env": {"SHELL": "/bin/bash", "TERM": "xterm-256color"}, "title": "bebop remember probe :: a tiny test concept"}
+[0.00444, "o", "### bebop remember probe :: a tiny test concept\r\n"]
+[1.223303, "o", "  ✓ remembered \"probe\" → d48281bb7105 (living memory size=14)\r\n"]

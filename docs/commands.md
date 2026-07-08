@@ -67,3 +67,24 @@ bebop self session hermes-now "active hermes session node"
 # Plug Bebop into an MCP client
 bebop mcp
 ```
+
+## ▶ Live CLI
+
+> Real `bebop` output, recorded with [asciinema](https://asciinema.org) → [agg](https://github.com/asciinema/agg) (no staging, no post-editing).
+
+**bebop boot — certify the guard OS**
+
+![bebop boot — certify the guard OS](footage/feat-boot.gif)
+
+**bebop govern — watch the governor refuse an under-damped loop**
+
+![bebop govern — watch the governor refuse an under-damped loop](footage/feat-govern.gif)
+
+**bebop self maintain — record a session as a living-memory node**
+
+![bebop self maintain — record a session as a living-memory node](footage/feat-self.gif)
+
+**bebop mcp — plug Bebop into an MCP client**
+
+![bebop mcp — plug Bebop into an MCP client](footage/feat-mcp.gif)
+

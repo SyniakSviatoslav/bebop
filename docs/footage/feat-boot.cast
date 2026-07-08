@@ -1,0 +1,5 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1783533757, "env": {"SHELL": "/bin/bash", "TERM": "xterm-256color"}, "title": "bebop boot"}
+[0.005499, "o", "### bebop boot\r\n"]
+[1.206229, "o", "◈ Bebop ship powered up. Liftoff ready.\r\n"]
+[1.211646, "o", "  · gate 'redline-deny' certified: green on good, red on bad.\r\n  · gate 'scope-block' certified: green on good, red on bad.\r\n"]
+[1.21167, "o", "  ✓ Bebop guard OS certified: gates deny on red, pass on green.\r\n"]

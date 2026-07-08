@@ -65,7 +65,7 @@ const TOOLS = [
   }),
   tool('bebop_route', 'Classify a task and return the cheapest-adequate backend routing decision.', {
     properties: {
-      taskClass: { type: 'string', enum: ['read', 'write', 'reason', 'creativity', 'exec', 'doer', 'redline'], description: 'Task class.' },
+      taskClass: { type: 'string', enum: ['doer', 'reason', 'redline'], description: 'Task class (matches TaskClass: doer=cheap, reason=mid, redline=opus).' },
     },
     required: ['taskClass'],
   }),

@@ -1,0 +1,3 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1783533788, "env": {"SHELL": "/bin/bash", "TERM": "xterm-256color"}, "title": "bebop diagrams"}
+[0.006399, "o", "### bebop diagrams\r\n"]
+[1.204617, "o", "  ◈ wrote docs/diagrams/project-map.svg\r\n  ◈ wrote 7 conceptual schemas (schema-*.svg)\r\n  graph: 35 modules, 71 real edges\r\n"]

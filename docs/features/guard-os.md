@@ -6,11 +6,15 @@ refuses to lie."
 
 ## What it checks
 
-1. **Red-line check** — a deny-list of globs (`auth`, `money`, `migrations/`, `*secret*`, …). A
-   red-line command is refused *unless* it carries a human approval token. **Fail-closed**: if
-   the check can't run, the command is denied.
-2. **Scope check** — commands are classified (`read` / `write-file` / `exec` / `network` /
-   `red-line`) and compared against the session's granted scope. Over-scope = denied.
+1. **Red-line check** — a deny-list of globs (`RED_LINE_GLOBS` in `guard.ts`: `**/auth/**`,
+   `**/migrations/**`, `**/rls/**`, `**/*.sql`, `**/packages/db/migrations/**`, `**/money/**`,
+   `**/payments/**`, `**/bulk-edit/**`, `**/secret/**`, `**/secrets/**`, `**/.env`,
+   `**/.env.*`). A red-line command is refused *unless* it carries a human approval token.
+   **Fail-closed**: if the check can't run, the command is denied.
+2. **Scope check** — paths are matched against a glob allow-list (`DEFAULT_SCOPE_GLOBS` in
+   `guard.ts`: `tools/bebop/**`, `docs/design/dowiz-agent-cli/**`). A command touching a file
+   outside the granted scope is denied. `checkScope()` is the pure function; `guard.test.ts`
+   asserts both a GREEN in-scope path and a RED out-of-scope path.
 3. **Certification** — a deterministic self-test (`selfTest()`) that proves the gate actually
    blocks the bad cases. `bebop boot` runs it; if the gate is broken, nothing autonomous runs.
 
@@ -34,5 +38,19 @@ $ bebop boot
 
 ## Extending the guard OS
 
-Add a red-line glob to the deny-list, or a new scope class, in `guard.ts`. Every change must keep
+Add a red-line glob to `RED_LINE_GLOBS`, or a new scope glob to `DEFAULT_SCOPE_GLOBS`, in
+`guard.ts`. Every change must keep
 `selfTest()` green — the gate's own proof is the regression test.
+
+## ▶ Live CLI
+
+> Real `bebop` output, recorded with [asciinema](https://asciinema.org) → [agg](https://github.com/asciinema/agg) (no staging, no post-editing).
+
+**bebop boot — guard self-test (red-line + scope gates must go RED and GREEN)**
+
+![bebop boot — guard self-test (red-line + scope gates must go RED and GREEN)](../footage/feat-boot.gif)
+
+**bebop dispatch — runs only after the guard clears the task**
+
+![bebop dispatch — runs only after the guard clears the task](../footage/feat-dispatch.gif)
+

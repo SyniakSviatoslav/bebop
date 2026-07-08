@@ -43,3 +43,12 @@ bebop govern "0.9,0.6,0.2,0.95,0.1,0.9"
 Watch authority rise on approvals (quality 1 → deficit 0) and fall on rejections, with
 resonance flagged `RISKY` before any destabilizing gain change. `governor.test.ts` asserts
 anti-windup clamping, ICIR scoring, and the resonance refusal — all RED+GREEN.
+
+## ▶ Live CLI
+
+> Real `bebop` output, recorded with [asciinema](https://asciinema.org) → [agg](https://github.com/asciinema/agg) (no staging, no post-editing).
+
+**bebop govern — L5 PID controller over a quality stream**
+
+![bebop govern — L5 PID controller over a quality stream](../footage/feat-govern.gif)
+
