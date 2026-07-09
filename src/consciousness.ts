@@ -91,7 +91,13 @@ export async function selfEvolve(idea: string): Promise<{ accepted: boolean; id?
     // shared prefixes (e.g. all "evolution:*" nodes).
     const near = mem.nearest(concept, 1)[0];
     if (near && near.sim >= 0.999) return 'reject'; // identical idea already evolved → quarantine
-    if (idea.trim().length < 4) return 'reject'; // trivial
+    const t = idea.trim();
+    if (t.length < 4) return 'reject'; // trivial
+    // RED-TEAM fix 2026-07-09: non-meaningful junk (pure control chars / punctuation / whitespace)
+    // is also rejected. `length >= 4` alone admitted things like "????" or "\x01\x02\x03\x04" as
+    // corpus mutations (fail-open on quality). A self-evolution must carry at least one alphanumeric
+    // token or it is noise, not a rule/hack proposal.
+    if (!/[A-Za-z0-9]/.test(t)) return 'reject';
     return 'approve';
   };
 
@@ -108,7 +114,16 @@ export async function selfEvolve(idea: string): Promise<{ accepted: boolean; id?
   // a corpus mutation perturbs the self-evolution loop. Model its expected perturbation gain as Kp
   // and refuse if that would drive the loop under-damped (ζ<0.707 → harmonic thrash / blow-up).
   // Conservative: any mutation adds coupling → treat as Kp bump; only accept if still well-damped.
-  const perturb = 1.4 + Math.min(1.6, idea.trim().length / 40); // each mutation is a small gain bump; bulk changes trip it
+  // RESONANCE PRE-CHECK (RED-TEAM fix 2026-07-09): the prior formula bumped gain by raw length
+  //   `perturb = 1.4 + min(1.6, len/40)`, which made ANY idea longer than ~32 chars trip ζ<0.707 and
+  //   get rejected — so ordinary self-evolution ideas were near-impossible to admit (a real defect).
+  //   The intent is to resist BULK changes, not normal-length ones. We now scale the gain bump by a
+  //   normalized change magnitude: a typical short/medium idea (~<120 chars) stays well-damped; only
+  //   genuinely bulk ideas (≫ a normal mutation) approach under-damping. ζ stays > 0.707 up to ~120
+  //   chars; length 600+ trips the gate (true bulk).
+  const len = idea.trim().length;
+  const norm = Math.max(0, (len - 32) / 568); // 0 at ≤32 chars, →1 near ~600 chars
+  const perturb = 1.4 + 1.6 * Math.min(1, norm); // well-damped for normal ideas, risky for bulk
   const res = loopResonance(perturb, 1.5, 1, 0.6);
   if (res.risky) {
     return { accepted: false, reason: 'resonance pre-check FAILED: mutation would make self-evolution under-damped (ζ<0.707) — quarantined before apply' };

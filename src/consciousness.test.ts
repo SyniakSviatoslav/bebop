@@ -44,8 +44,18 @@ test('RED: selfEvolve QUARANTINES a near-duplicate idea', async () => {
 });
 
 test('RED: selfEvolve QUARANTINES a bulk mutation that would make self-evolution under-damped (resonance pre-check)', async () => {
-  // a very long/structural idea represents a large coupling gain → loopResonance flags ζ<0.707
-  const bulk = 'restructure the entire corpus graph by rewiring every node edge weight and adding recursive sub-loops across all layers simultaneously';
+  // A GENUINELY bulk idea (≥350 chars = a massive structural change) represents a large coupling gain
+  // → loopResonance flags ζ<0.707. (The resonance pre-check was tightened 2026-07-09 so normal-length
+  // ideas ~<300 chars are admitted; only true bulk trips it. This string is deliberately bulk.)
+  const bulk = (
+    'restructure the entire corpus graph by rewiring every node edge weight and adding recursive ' +
+    'sub-loops across all layers simultaneously with a fleet of background daemons that each mutate ' +
+    'the kernel invariant in parallel without coordination and also rebalance every associative ' +
+    'recall pathway with exponential backoff and a probabilistic gossip storm that floods the ' +
+    'spreading-activation field and rewrites the seed corpus from scratch while forking the ' +
+    'governor telemetry loop into a thousand diverging branches of self-reference'
+  );
+  assert.ok(bulk.length >= 350, 'bulk fixture must be genuinely large to trip the resonance gate');
   const r = await selfEvolve(bulk);
   assert.equal(r.accepted, false);
   assert.match(r.reason, /resonance/i);

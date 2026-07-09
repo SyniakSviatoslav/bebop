@@ -29,6 +29,7 @@ export interface GovernorState {
   anomaly: boolean;
   thermoFloorHit: boolean;
   error: number;
+  poisoned?: boolean; // true when a non-finite sample was rejected (RED-TEAM fix 2026-07-09)
 }
 
 // ── pure math primitives ──────────────────────────────────────────────────────
@@ -196,6 +197,23 @@ export class Governor {
   }
 
   step(s: TelemetrySample): GovernorState {
+    // FAILOUT/Poison guard (RED-TEAM finding 2026-07-09): a non-finite sample (NaN/Infinity from a
+    // degraded upstream) must NOT corrupt the integral accumulator — once NaN enters `this.pid`,
+    // every future `authority` is NaN (silent poison that the L5 authority gate trusts). On bad input
+    // we floor authority to uMin and return a safe state WITHOUT integrating the bad sample.
+    if (!Number.isFinite(s.predictedQuality) || !Number.isFinite(s.actualQuality) || !Number.isFinite(s.cost) || !Number.isFinite(s.volume)) {
+      return (this.last = {
+        authority: this.cfg.uMin,
+        pidU: 0,
+        icir: this._meanIC || null,
+        factorStatus: 'dead',
+        resonanceRisky: this.resonanceRisky,
+        anomaly: true,
+        thermoFloorHit: false,
+        error: NaN,
+        poisoned: true,
+      } as GovernorState);
+    }
     const error = this.cfg.targetQuality - s.actualQuality;
     const c = this.cfg;
     const { u, integral } = pidStep(c, this.pid, error);

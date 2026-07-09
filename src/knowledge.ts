@@ -114,6 +114,18 @@ function recallLocal(query: string, k = 5, opts: RecallOpts = {}): { id: string;
 // Call the living-knowledge §0·GP retriever (optional, vendored from dowiz). Returns ranked
 // {id,text} hits. Degrades honestly to in-process memory when the retriever isn't present here.
 export function recall(query: string, opts: RecallOpts = {}): Recall {
+  const trimmed = (query ?? '').trim();
+  // HONEST DEGRADATION (RED-TEAM fix 2026-07-09): an empty/whitespace query cannot match a concept,
+  // so it must never surface hits or claim `found=true`. Previously recallScored("") substring-matched
+  // every node ("" is a substring of all concepts) and fabricated a confident recall. Empty query →
+  // honest "nothing found".
+  if (trimmed.length === 0) {
+    return {
+      found: false,
+      hits: [],
+      note: 'in-process livingMemory (VSA + graph) only — empty query matches nothing (honest degradation)',
+    };
+  }
   const hits = recallLocal(query, 5, opts).map((h) => ({ id: h.id, text: h.text, score: h.score }));
   const script = path.join(REPO_ROOT, 'spikes', 'living-knowledge', 'search.mjs');
   if (!fs.existsSync(script)) {

@@ -104,7 +104,7 @@ command and exposes `verifySelfEvolution()` — the agent can prove its own evol
 ## Verification
 
 ```
-npm test            # 305 TS tests (RED+GREEN), 0 fail  [authoritative: node --test --import tsx 'src/**/*.test.ts']
+npm test            # 350 TS tests (RED+GREEN), 0 fail  [authoritative: node --test --import tsx 'src/**/*.test.ts']
 cargo test -p bebop-core   # 7 Rust kernel tests
 npm run typecheck   # 0 errors
 ```

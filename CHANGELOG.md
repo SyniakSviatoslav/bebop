@@ -4,6 +4,50 @@ All notable changes to Bebop are documented here. Format: keep it falsifiable �
 backed by a RED+GREEN test in `src/**/*.test.ts` (authoritative runner:
 `node --test --import tsx 'src/**/*.test.ts'`).
 
+## [0.3.2] — 2026-07-09 — "Agent-driven red-team: 3 real bugs fixed, honest next-phase scaffolds"
+
+### Fixed (each with a falsifiable RED+GREEN test)
+- **Governor NaN poison leak (recall/governor attack surface).** `Governor.step` fed a
+  non-finite sample (NaN/Infinity) integrated NaN into the PID accumulator, permanently poisoning
+  `authority` so later *finite* samples still yielded `authority=NaN` — silent L5 authority rot that
+  the self-evolution gate trusts. Now `step` rejects non-finite samples: floors `authority` to `uMin`,
+  sets `poisoned=true`, and does NOT integrate the bad sample. Recovery proven: a healthy sample after
+  a NaN clears the poisoned flag and yields finite authority.
+  - Tests: `redteam-recall.test.ts` (GREEN `Governor.step` with NaN → finite + `poisoned`; GREEN
+    recovers on next finite sample).
+- **`recall('')` fabricates a confident hit (honest-degradation violation).** `recallScored("")`
+  substring-matched every node (`""` is a substring of all concepts) and returned `found=true` with all
+  corpus nodes. Now an empty/whitespace query returns `found=false`, `hits=[]` (honest degradation).
+  - Tests: `redteam-recall.test.ts` (GREEN `recall("")` / `recall("   ")` → no hits).
+- **Resonance pre-check over-conservative (self-evolution).** `perturb = 1.4 + len/40` tripped
+  ζ<0.707 (under-damped) for ANY idea longer than ~32 chars, making ordinary self-evolution near-
+  impossible to admit. Re-scaled to a normalized change magnitude: well-damped for normal ideas,
+  risky only for genuinely bulk (≫300-char) mutations. The bulk-rejection property is preserved.
+  - Tests: `redteam-self.test.ts` (GREEN short idea admitted; RED genuine bulk quarantined),
+    `consciousness.test.ts` (bulk fixture updated to ≥350 chars to reflect the corrected threshold).
+- **Self-evolution fail-open on junk (quality).** The triviality gate was pure length (`< 4`), so
+  any 4+ non-alphanumeric chars (`????`, control chars) were admitted as corpus mutations. Now also
+  requires ≥1 alphanumeric token.
+  - Tests: `redteam-self.test.ts` (GREEN junk rejected; GREEN alphanumeric short idea still admitted).
+
+### Added (honest next-phase scaffolding — env-gated, fail-closed, NOT faked)
+- **Real Zenoh mesh adapter** (`src/integration/zenoh/real-adapter.ts`): `selectZenoh(mode, ids)`
+  returns the in-process `LocalMesh` twin by default; when the native `@eclipse-zenoh/zenoh-ts` client
+  is present `mode:'real'` uses it. Requesting `real` without the native client FAILS CLOSED to the
+  local twin (never claims a connection). Unknown mode throws.
+  - Tests: `zenoh/real-adapter.test.ts` (5 GREEN falsifiable proofs).
+- **Real zkVM prover adapter** (`src/integration/zkvm/prover-adapter.ts`): `prove(...)` returns the
+  tamper-evident `decide()` digest by default; with `BEBOP_RISC0_PROVER` set + a real prover it
+  returns a genuine STARK receipt. Requesting `prove` without a prover FAILS CLOSED to the digest
+  (NO fabricated seal). Unknown mode throws.
+  - Tests: `zkvm/prover-adapter.test.ts` (4 GREEN falsifiable proofs).
+
+### Verification (fresh, on main)
+- `npm test` → 350 pass / 0 fail (baseline 305 → +45 red-team + adapter + corrected tests).
+- `pnpm run typecheck` → 0 errors. `pnpm run build` → bebop_core.wasm 183197 bytes (unchanged).
+- Agent-driven red-team: 3 autonomous subagents exercised the LIVE CLI (self-evolution, loop/dispatch,
+  recall/governor) and surfaced the 3 real bugs above; each is now locked by a RED+GREEN test.
+
 ## [0.3.0] — 2026-07-09 — "Sovereign Node: integrations composed into the one gate"
 
 ### Added
