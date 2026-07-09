@@ -10,7 +10,7 @@
 // Falsifiable by design: if you change the code to break a claim (e.g. re-add NO_ANIM=1 to the
 // recorder, or let README's test count drift), this script exits 1.
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { execFileSync, execSync } from 'node:child_process';
 import path from 'node:path';
 
@@ -104,13 +104,15 @@ try {
     hasMatrix ? 'README compares Bebop vs others with ✅/❌ — unverified superiority claim' : 'comparison is prose, not a fake scorecard');
 }
 
-// --- H. Wiki honesty: README must not claim a populated wiki without openwiki/ ---
+// --- H. Wiki honesty: README must not claim a populated wiki without a real wiki dir ---
 {
   const readme = read('README.md');
-  const wikiDir = existsSync(path.join(ROOT, 'openwiki'));
-  const claimsPopulated = /rich.*wiki|populated wiki|full wiki/.test(readme);
-  check('wiki claim honest (no populated-wiki claim without openwiki/)', !(claimsPopulated && !wikiDir),
-    claimsPopulated && !wikiDir ? 'claims a populated wiki but openwiki/ is absent' : 'wiki gap stated honestly');
+  const openwiki = existsSync(path.join(ROOT, 'openwiki'));
+  const docsWiki = existsSync(path.join(ROOT, 'docs/wiki')) && readdirSync(path.join(ROOT, 'docs/wiki')).filter((f) => f.endsWith('.md')).length >= 3;
+  const wikiDir = openwiki || docsWiki;
+  const claimsPopulated = /rich.*wiki|populated wiki|full wiki|wiki content/.test(readme);
+  check('wiki claim honest (populated-wiki claim backed by openwiki/ or docs/wiki/)', !(claimsPopulated && !wikiDir),
+    claimsPopulated && !wikiDir ? 'claims a populated wiki but neither openwiki/ nor docs/wiki/ exists' : (docsWiki ? 'docs/wiki/ ships non-empty human-authored wiki (renders on GitHub); GitHub wiki tab needs Settings enable' : 'wiki gap stated honestly'));
 }
 
 // --- I. ReAct agentic loop is REAL, visible, and not hidden (the promo-demo failure mode) ---

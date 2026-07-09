@@ -132,6 +132,10 @@ Full proof table: [`docs/VERIFICATION-MATRIX.md`](docs/VERIFICATION-MATRIX.md).
 - Rules: [`docs/RULES.md`](docs/RULES.md) — *Constant Doubt: no verification, no statement.* Also:
   **better less than sorry** — never state what isn't fact-checked.
 - Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · features: [`docs/features/`](docs/features/)
+- **Wiki** (the GitHub *wiki* tab needs a one-click enable in repo Settings, or a `repo`-admin token —
+  the full wiki content already ships here and renders on GitHub): [`docs/wiki/`](docs/wiki/) —
+  [Home](docs/wiki/Home.md) · [Field-Sim Comparison](docs/wiki/Field-Sim-Comparison.md) (unique feature) ·
+  [Multipilot](docs/wiki/Multipilot.md) · [Outfit](docs/wiki/Outfit.md) · [Verification](docs/wiki/Verification.md).
 - Translations: 🇺🇦 [Українська](README.uk.md) · License: AGPL-3.0 · DCO (`git commit -s`).
 
 <p align="center"><i>𝓈ℯℯ 𝓎ℴ𝓊 𝓈𝓅𝒶𝒸ℯ 𝒸ℴ𝓌𝒷ℴ𝓎</i></p>
