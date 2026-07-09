@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rustBuild, rustSpectral, rustActive, rustVsaSimilarity } from './field-rust.ts';
+import { rustBuild, rustSpectral, rustActive, rustVsaSimilarity, rustDispose, rustMemoryBytes } from './field-rust.ts';
 import { laplacian } from './field-sim.ts';
 
 // Build a path graph adjacency (the canonical test case for the Laplacian).
@@ -105,3 +105,63 @@ function predictImpactLoop(A: number[][], u0: Float64Array, steps: number, dt: n
   }
   return u;
 }
+
+// ── MEMORY DISCIPLINE (2026-07-09): leak-free graph lifecycle across a long-running agent ──
+// RED: if build/propagate/dispose leaked, the wasm heap would grow monotonically across cycles.
+// GREEN: after dispose the stored graph is dropped, so repeated cycles must NOT grow the heap.
+test('rust memory is stable across build→propagate→dispose cycles (no leak)', async () => {
+  const n = 200;
+  const A = pathAdj(n);
+  const u0 = new Float64Array(n);
+  u0[0] = 1.0;
+
+  await rustBuild(A);
+  await rustSpectral(u0, 5.0, 1.0, 20);
+  const baseline = await rustMemoryBytes(); // heap after first real workload
+
+  // 100 rebuild + propagate + dispose cycles on the SAME graph size.
+  for (let c = 0; c < 100; c++) {
+    await rustBuild(A);
+    await rustSpectral(u0, 5.0, 1.0, 20);
+    await rustActive(u0, 10, { dt: 0.1, coeff: 1.0, eps: 1e-3 });
+    await rustDispose();
+  }
+
+  const after = await rustMemoryBytes();
+  // Heap is allowed to grow (wasm never shrinks a live buffer), but it must NOT keep growing per
+  // cycle. A true leak would make `after` explode far beyond `baseline` + one page. We assert the
+  // growth is bounded to at most a single 64KiB page over 100 cycles (i.e. effectively stable).
+  const growth = after - baseline;
+  assert.ok(growth <= 65536, `heap grew ${growth} bytes over 100 cycles (leak!)`);
+});
+
+// RED: disposing then propagating without a rebuild must NOT silently return stale data — the
+// kernel must REFUSE (error code) because no graph is stored. This proves dispose actually freed
+// the state rather than leaving a dangling graph.
+test('rust dispose clears state — no stale graph lingers (RED: compute must refuse on empty)', async () => {
+  const n = 30;
+  const A = pathAdj(n);
+  const u0 = new Float64Array(n);
+  u0[0] = 1.0;
+  await rustBuild(A);
+  const before = await rustSpectral(u0, 5.0, 1.0, 20);
+  const massBefore = Array.from(before).reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(massBefore - 1.0) < 1e-2, `mass before dispose=${massBefore}`); // sanity
+
+  await rustDispose();
+  // After dispose STATE is empty (n=0). field_spectral must return rc=1 and rustSpectral must throw.
+  // If dispose left a dangling graph, this would silently return a field → RED would be violated.
+  await assert.rejects(
+    () => rustSpectral(u0, 5.0, 1.0, 20),
+    /error code 1/,
+    'dispose must leave the kernel with no graph to propagate'
+  );
+
+  // re-build restores correctness (round-trip integrity)
+  await rustBuild(A);
+  const restored = await rustSpectral(u0, 5.0, 1.0, 20);
+  const massR = Array.from(restored).reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(massR - 1.0) < 1e-2, `mass after rebuild=${massR}`);
+});
+
+

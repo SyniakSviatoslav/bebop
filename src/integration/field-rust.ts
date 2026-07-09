@@ -125,5 +125,21 @@ export async function rustVsaSimilarity(a: Float64Array | number[], b: Float64Ar
   return (inst.exports.vsa_similarity as Function)(aOff, bOff, n) as number;
 }
 
+/**
+ * DISPOSE — free the stored graph inside the live WASM instance (calls Rust `field_reset`, which
+ * drops the CSR/col/degrees Vecs). Call between graphs to reclaim memory without tearing down the
+ * whole instance. The contract: every propagate sequence is preceded by a fresh `rustBuild`.
+ */
+export async function rustDispose(): Promise<void> {
+  const inst = await getInstance();
+  (inst.exports.field_reset as Function)();
+}
+
+/** Current WASM heap size in bytes (live buffer). Used by leak/stability assertions. */
+export async function rustMemoryBytes(): Promise<number> {
+  const inst = await getInstance();
+  return liveMem(inst).buffer.byteLength;
+}
+
 /** Path to the prebuilt WASM (exposed for tests). */
 export const RUST_WASM_PATH = WASM_PATH;
