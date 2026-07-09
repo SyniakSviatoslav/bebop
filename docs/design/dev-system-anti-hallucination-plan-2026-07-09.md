@@ -26,7 +26,7 @@ These are real EV but explicitly out of scope per the operator's directive
 |---|------|--------------|--------------|
 | D1 | Wire `telemetry-ica-loop` (ICA→cycle-consistency) to the REAL Dowiz telemetry stream | needs a live/staged telemetry source + flag-OFF shadow harness | operator approves a feature flag + a staging telemetry feed |
 | D2 | Wire ICA pipeline into `governor.ts` (today only `cycleConsistency` + `pcaAnomaly` are wired flag-OFF) | module is verified but un-wired into runtime | after D1 shadow run proves stable |
-| D3 | `selectZenoh` + `prove` into kernel dispatch (flag-OFF, RED+GREEN) | standing "apply findings into real runtime" item | next max-EV wiring pass |
+| D3 | `selectZenoh` + `prove` into kernel dispatch (flag-OFF, RED+GREEN) | **DONE 2026-07-09** — wired into the dispatch SHELL (`runDispatch`, not the pure kernel — selection does IO); `cfg.meshMode` flag-OFF; fail-closed to LocalMesh twin; RED+GREEN+falsifiable in `src/loop.test.ts` | ✅ landed |
 | D4 | Dowiz ETA model (quantileLoss + huber, prediction intervals) | needs a real ETA seam in `apps/api` | when ETA module located + scoped |
 | D5 | RAG noise-cleaning (pcaFit/pcaProject before recall in `knowledge.ts`) | feature, not a correctness blocker | after D1 |
 | D6 | Causal graph over module-import adjacency (counterfactual "points of failure") | R&D, needs real trace | separate causal-discovery arc |

@@ -144,3 +144,29 @@ test('RED: without activeInference, the FEP advisor is NOT invoked', async () =>
   assert.equal(res.ok, true);
   assert.ok(!res.transcript.some((l) => l.includes('fep →')), 'FEP advisor must stay off unless flag set');
 });
+
+// ── D3: Zenoh mesh transport selection (flag-OFF) ──
+const hasMesh = (log: { detail: string }[]) => log.some((e) => e.detail.startsWith('mesh='));
+
+test('GREEN: meshMode=local stamps the LocalMesh provenance onto the dispatch log', async () => {
+  const dir = tmp();
+  const res = await runLoop({ cwd: dir, taskClass: 'doer', meshMode: 'local', llm: dispatchThenDone('summarize the README') });
+  const mesh = res.log.find((e) => e.detail.startsWith('mesh='));
+  assert.ok(mesh, 'meshMode set ⇒ a mesh provenance envelope must be recorded');
+  assert.match(mesh!.detail, /mesh=local/, 'local mode must report the in-process LocalMesh twin');
+});
+
+test('GREEN: meshMode=real fails CLOSED to local (never claims an unbacked connection)', async () => {
+  const dir = tmp();
+  // no native @eclipse-zenoh/zenoh-ts is installed → selectZenoh must degrade to local, honestly.
+  const res = await runLoop({ cwd: dir, taskClass: 'doer', meshMode: 'real', llm: dispatchThenDone('summarize the README') });
+  const mesh = res.log.find((e) => e.detail.startsWith('mesh='));
+  assert.ok(mesh, 'meshMode=real must still record a provenance envelope');
+  assert.match(mesh!.detail, /mesh=local.*fail-closed/, 'real-without-native must degrade to local and SAY so');
+});
+
+test('RED: without meshMode, NO mesh provenance is recorded (flag stays off)', async () => {
+  const dir = tmp();
+  const res = await runLoop({ cwd: dir, taskClass: 'doer', llm: dispatchThenDone('summarize the README') });
+  assert.ok(!hasMesh(res.log), 'mesh selection must stay off unless meshMode is set');
+});

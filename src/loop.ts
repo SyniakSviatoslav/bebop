@@ -20,6 +20,7 @@ import { SHIP, banner, makePaint } from './theme.ts';
 import { BOOT, say, TAGLINE, voiceFor } from './voice.ts';
 import { runBackend, type Backend } from './backend.ts';
 import { selectBackend, rotate } from './routing.ts';
+import { selectZenoh } from './integration/zenoh/real-adapter.ts';
 import { emptyLedger, record, type Ledger } from './token.ts';
 import type { Profile } from './profile.ts';
 import { preToolUse, type HookSpec } from './hooks.ts';
@@ -62,6 +63,14 @@ export interface BebopConfig {
   // engine to pick the next action. Complements the field oracle (field = where to look; FEP = what
   // to do). Off by default. Grounded in real pymdp numbers (see src/integration/active-inference).
   activeInference?: boolean;
+  // Zenoh mesh transport selection (D3, flag-OFF): when set to 'local' | 'real', dispatch records
+  // WHICH transport won via the pure `selectZenoh` probe and stamps its provenance onto the dispatch
+  // envelope detail. Fail-closed — 'real' with no native @eclipse-zenoh client degrades to 'local'
+  // and says so; it NEVER claims a connection it doesn't have, and it stays OUT of the pure kernel
+  // (selection does IO). Off by default: no meshMode ⇒ dispatch behaves exactly as before.
+  meshMode?: 'local' | 'real';
+  // node ids to wire into the mesh when meshMode is set (defaults to a single 'bebop' node).
+  meshIds?: string[];
 }
 
 export interface LoopContext {
@@ -260,6 +269,12 @@ function runDispatch(
     if (next) res = await runBackend(next.backend, task, { model: next.model, yolo: profile.yolo, runNative: nativeRunner });
   }
   log.push({ seq: log.length, cause: causeHash(task), backend: res.backend, event: 'dispatch', detail: res.summary });
+  // D3 (flag-OFF): stamp which Zenoh mesh transport is in use onto the dispatch record. Pure
+  // selection, fail-closed to the deterministic LocalMesh twin — never claims an unbacked connection.
+  if (cfg.meshMode) {
+    const sel = selectZenoh(cfg.meshMode, cfg.meshIds ?? ['bebop']);
+    log.push({ seq: log.length, cause: causeHash(task), backend: res.backend, event: 'dispatch', detail: `mesh=${sel.mode} (${sel.provenance})` });
+  }
   const tag = `${res.backend}${res.ok ? '' : ' (failed)'}`;
   return { result: `[${tag}] ${res.summary}`, backend: res.backend, ok: res.ok };
   })();
