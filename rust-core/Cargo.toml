@@ -5,7 +5,7 @@ edition = "2021"
 description = "Deterministic graph-PDE field core (Rust->WASM). Chebyshev spectral propagator + active-set pruning. No RNG, no Date, no std deps."
 
 [lib]
-crate-type = ["cdylib"]   # emits a .wasm we instantiate from Node (no wasm-bindgen dep -> air-gapped build)
+crate-type = ["cdylib", "rlib"]   # cdylib -> bebop_core.wasm; rlib -> linkable by the native CLI
 
 [profile.release]
 opt-level = 3
