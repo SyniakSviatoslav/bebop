@@ -131,12 +131,73 @@ pub extern "C" fn field_matvec(x: *const f64, y: *mut f64, mask: *const u8) {
     });
 }
 
-/// A. SPECTRAL PROPAGATOR — Chebyshev approximation of u(t) = exp(-coeff·L·t) · u0.
-/// One-shot: no K-loop. `deg` = Chebyshev degree (≈ 16-24 gives machine-precision for smooth spectra).
-/// Writes the result into `out` (len n). Returns 0 on success.
-///
-/// Memory: peak working set = 4·n f64 (t_prev, t_cur, t_next, lu) — rotated, never re-allocated
-/// inside the degree loop. Replaces the old (deg+2)·n transient allocation.
+/// A. SPECTRAL PROPAGATOR core — Chebyshev approximation of u(t) = exp(-coeff·L·t) · u0.
+/// One-shot, matrix-free. Allocates its 4·n working set internally and returns the n-vector.
+/// Returns `None` on invalid input (empty graph / deg<1). Shared by `field_spectral`, `field_rank`,
+/// `field_cost` so the bridge primitives never re-derive the field (memory discipline: one compute).
+fn spectral_propagate(
+    xs: &[f64],
+    t: f64,
+    coeff: f64,
+    deg: i32,
+    rp: &[i32],
+    ci: &[i32],
+    d: &[f64],
+) -> Option<Vec<f64>> {
+    let n = xs.len();
+    if n == 0 || deg < 1 {
+        return None;
+    }
+    let lamax = lambda_max(d);
+    let b = lamax; // interval [0, b]
+
+    // Chebyshev coefficients c_k via trapezoid on θ∈[0,π]
+    let qp = 64usize; // quadrature points (deterministic)
+    let mut c = vec![0.0f64; (deg + 1) as usize];
+    for k in 0..=deg as usize {
+        let mut s = 0.0;
+        for j in 0..qp {
+            let theta = core::f64::consts::PI * (j as f64 + 0.5) / qp as f64;
+            let lambda = 0.5 * b * (1.0 + fcos(theta));
+            let f = fexp(-coeff * t * lambda);
+            s += f * fcos(k as f64 * theta);
+        }
+        c[k] = 2.0 * s / qp as f64; // trapezoid: ∫₀^π f·cos dθ ≈ (π/qp)·Σ, times (2/π) = 2/qp·Σ
+        if k == 0 {
+            c[k] *= 0.5;
+        } // T0 normalization
+    }
+
+    // Three-term Chebyshev recurrence on the matrix: T_{k+1}(ã) = 2·ã·T_k - T_{k-1}
+    // ã(L) = (2/b)·L - I   (maps [0,b]→[-1,1])
+    let mut t_prev = xs.to_vec(); // T0 = I·u0
+    let mut lu = vec![0.0f64; n];
+    field_matvec_raw(&t_prev, &mut lu, rp, ci, d, None);
+    let mut t_cur = vec![0.0f64; n];
+    for i in 0..n {
+        t_cur[i] = (2.0 / b) * lu[i] - t_prev[i];
+    } // T1 = ã·T0
+    let mut res = vec![0.0f64; n];
+    for i in 0..n {
+        res[i] = c[0] * t_prev[i] + c[1] * t_cur[i];
+    }
+    let mut t_next = vec![0.0f64; n]; // scratch, rotated in each iteration
+    for k in 2..=deg as usize {
+        field_matvec_raw(&t_cur, &mut lu, rp, ci, d, None);
+        for i in 0..n {
+            t_next[i] = 2.0 * ((2.0 / b) * lu[i] - t_cur[i]) - t_prev[i];
+        }
+        for i in 0..n {
+            res[i] += c[k] * t_next[i];
+        }
+        // rotate: prev <- cur, cur <- next, next <- (old prev, reused as scratch)
+        std::mem::swap(&mut t_prev, &mut t_cur);
+        std::mem::swap(&mut t_cur, &mut t_next);
+    }
+    Some(res)
+}
+
+/// C-ABI wrapper: writes u(t)=exp(-coeff·L·t)·u0 into `out` (len n). Returns 0 on success, 1 on error.
 #[no_mangle]
 pub extern "C" fn field_spectral(
     u0: *const f64,
@@ -146,61 +207,15 @@ pub extern "C" fn field_spectral(
     out: *mut f64,
 ) -> i32 {
     let rc = with_graph(|rp, ci, d, n| -> i32 {
-        if n == 0 || deg < 1 {
-            return 1;
-        }
         let xs = unsafe { core::slice::from_raw_parts(u0, n) };
         let os = unsafe { core::slice::from_raw_parts_mut(out, n) };
-        let lamax = lambda_max(d);
-        let b = lamax; // interval [0, b]
-
-        // Chebyshev coefficients c_k via trapezoid on θ∈[0,π]
-        let qp = 64usize; // quadrature points (deterministic)
-        let mut c = vec![0.0f64; (deg + 1) as usize];
-        for k in 0..=deg as usize {
-            let mut s = 0.0;
-            for j in 0..qp {
-                let theta = core::f64::consts::PI * (j as f64 + 0.5) / qp as f64;
-                let lambda = 0.5 * b * (1.0 + fcos(theta));
-                let f = fexp(-coeff * t * lambda);
-                s += f * fcos(k as f64 * theta);
+        match spectral_propagate(xs, t, coeff, deg, rp, ci, d) {
+            Some(res) => {
+                os.copy_from_slice(&res);
+                0
             }
-            c[k] = 2.0 * s / qp as f64; // trapezoid: ∫₀^π f·cos dθ ≈ (π/qp)·Σ, times (2/π) = 2/qp·Σ
-            if k == 0 {
-                c[k] *= 0.5;
-            } // T0 normalization
+            None => 1,
         }
-
-        // Three-term Chebyshev recurrence on the matrix: T_{k+1}(ã) = 2·ã·T_k - T_{k-1}
-        // ã(L) = (2/b)·L - I   (maps [0,b]→[-1,1])
-        let mut t_prev = xs.to_vec(); // T0 = I·u0
-        let mut lu = vec![0.0f64; n];
-        field_matvec_raw(&t_prev, &mut lu, rp, ci, d, None);
-        let mut t_cur = vec![0.0f64; n];
-        for i in 0..n {
-            t_cur[i] = (2.0 / b) * lu[i] - t_prev[i];
-        } // T1 = ã·T0
-        let mut res = vec![0.0f64; n];
-        for i in 0..n {
-            res[i] = c[0] * t_prev[i] + c[1] * t_cur[i];
-        }
-        let mut t_next = vec![0.0f64; n]; // scratch, rotated in each iteration
-        for k in 2..=deg as usize {
-            field_matvec_raw(&t_cur, &mut lu, rp, ci, d, None);
-            for i in 0..n {
-                t_next[i] = 2.0 * ((2.0 / b) * lu[i] - t_cur[i]) - t_prev[i];
-            }
-            for i in 0..n {
-                res[i] += c[k] * t_next[i];
-            }
-            // rotate: prev <- cur, cur <- next, next <- (old prev, reused as scratch)
-            std::mem::swap(&mut t_prev, &mut t_cur);
-            std::mem::swap(&mut t_cur, &mut t_next);
-        }
-        for i in 0..n {
-            os[i] = res[i];
-        }
-        0
     });
     rc
 }
@@ -266,6 +281,86 @@ pub extern "C" fn field_active(
         }
         ac[0] = (1000.0 * total_active as f64 / (steps as f64 * n as f64).max(1.0)) as i32;
         steps
+    })
+}
+
+// ── PDDL ↔ FIELD BRIDGE (2026-07-09b): numeric→symbolic grounding + cost function ──
+//
+// The field is the COST SURFACE; PDDL is the EXECUTOR. `field_rank`/`field_cost` expose the
+// predicted-downstream-impact of a disruption (impulse `seed`) weighted by per-node `sensitivity`
+// (the metaplasticity knob: a node's criticality/confidence). PDDL reads `field_cost(action)` as a
+// numeric predicate and the `field_rank` vector as the "Top-K Contours" explainability surface.
+// "The Final Arbiter": field overrides PDDL only when field_cost(action) > tolerance — encoded in
+// the TS layer (rustFieldArbiter), not here, so the policy stays in one visible place.
+
+/// BRIDGE A — RANK: per-node predicted impact = impact_field(node) · sensitivity(node).
+/// `seed` is the disruption source (e.g. impulse at the node an action would take down). Writes the
+/// n-vector into `out`. `sens` may be null (uniform 1.0). Returns 0 on success, 1 on empty graph.
+#[no_mangle]
+pub extern "C" fn field_rank(
+    seed: *const f64,
+    sens: *const f64,
+    t: f64,
+    coeff: f64,
+    deg: i32,
+    out: *mut f64,
+) -> i32 {
+    with_graph(|rp, ci, d, n| -> i32 {
+        if n == 0 {
+            return 1;
+        }
+        let seed_s = unsafe { core::slice::from_raw_parts(seed, n) };
+        let sens_s: Option<&[f64]> = if sens.is_null() {
+            None
+        } else {
+            Some(unsafe { core::slice::from_raw_parts(sens, n) })
+        };
+        match spectral_propagate(seed_s, t, coeff, deg, rp, ci, d) {
+            Some(field) => {
+                let os = unsafe { core::slice::from_raw_parts_mut(out, n) };
+                for i in 0..n {
+                    let s = sens_s.map(|sv| sv[i]).unwrap_or(1.0);
+                    os[i] = field[i] * s; // impact · sensitivity
+                }
+                0
+            }
+            None => 1,
+        }
+    })
+}
+
+/// BRIDGE B — COST: scalar predicted impact of an action = Σ_i field[i]·sensitivity[i].
+/// This is the numeric cost predicate PDDL consumes. Always ≥ 0 (heat kernel is nonnegative);
+/// returns -1.0 only as an error sentinel for an empty graph / invalid deg.
+#[no_mangle]
+pub extern "C" fn field_cost(
+    seed: *const f64,
+    sens: *const f64,
+    t: f64,
+    coeff: f64,
+    deg: i32,
+) -> f64 {
+    with_graph(|rp, ci, d, n| -> f64 {
+        if n == 0 {
+            return -1.0;
+        }
+        let seed_s = unsafe { core::slice::from_raw_parts(seed, n) };
+        let sens_s: Option<&[f64]> = if sens.is_null() {
+            None
+        } else {
+            Some(unsafe { core::slice::from_raw_parts(sens, n) })
+        };
+        match spectral_propagate(seed_s, t, coeff, deg, rp, ci, d) {
+            Some(field) => {
+                let mut cost = 0.0;
+                for i in 0..n {
+                    let s = sens_s.map(|sv| sv[i]).unwrap_or(1.0);
+                    cost += field[i] * s;
+                }
+                cost
+            }
+            None => -1.0,
+        }
     })
 }
 
@@ -608,5 +703,92 @@ mod tests {
         }
         // if we got here without OOM/panic, the free/rebuild cycle is leak-free on the Rust side.
         assert!(true);
+    }
+
+    // ── PDDL ↔ FIELD BRIDGE tests (2026-07-09b): cost surface + rank grounding ──
+
+    /// GREEN: field_cost(impulse at node 0) equals the spectral mass = 1.0 when sensitivity uniform.
+    /// (Heat kernel conserves mass, so Σ impact = 1 with uniform sensitivity.)
+    #[test]
+    fn test_bridge_cost_conserves_mass_uniform() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let (rp, ci, nnz) = path_graph(20);
+        unsafe {
+            field_build(rp.as_ptr(), ci.as_ptr(), nnz, 20);
+        }
+        let mut seed = [0.0f64; 20];
+        seed[0] = 1.0;
+        let cost = unsafe { field_cost(seed.as_ptr(), std::ptr::null(), 20.0, 1.0, 40) };
+        assert!(
+            (cost - 1.0).abs() < 1e-2,
+            "uniform-sensitivity cost={cost}, expect ≈1"
+        );
+    }
+
+    /// GREEN: a sensitivity spike at the ripple frontier raises field_cost above the uniform baseline.
+    /// (Localizing criticality onto where the disruption lands should increase total weighted impact.)
+    #[test]
+    fn test_bridge_cost_rises_with_sensitivity_spike() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let (rp, ci, nnz) = path_graph(40);
+        unsafe {
+            field_build(rp.as_ptr(), ci.as_ptr(), nnz, 40);
+        }
+        let mut seed = [0.0f64; 40];
+        seed[0] = 1.0;
+        let base = unsafe { field_cost(seed.as_ptr(), std::ptr::null(), 5.0, 1.0, 30) };
+        let mut sens = vec![1.0f64; 40];
+        // put weight at the downstream ripple (node 20), where the field has spread by t=5
+        sens[20] = 5.0;
+        let weighted = unsafe { field_cost(seed.as_ptr(), sens.as_ptr(), 5.0, 1.0, 30) };
+        assert!(
+            weighted > base,
+            "sensitivity spike must raise cost: base={base} weighted={weighted}"
+        );
+    }
+
+    /// GREEN: field_rank returns a vector whose mass == field_cost (rank is the per-node breakdown).
+    #[test]
+    fn test_bridge_rank_mass_equals_cost() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let (rp, ci, nnz) = path_graph(25);
+        unsafe {
+            field_build(rp.as_ptr(), ci.as_ptr(), nnz, 25);
+        }
+        let mut seed = [0.0f64; 25];
+        seed[0] = 1.0;
+        let cost = unsafe { field_cost(seed.as_ptr(), std::ptr::null(), 10.0, 1.0, 30) };
+        let mut rank = [0.0f64; 25];
+        let rc = unsafe {
+            field_rank(
+                seed.as_ptr(),
+                std::ptr::null(),
+                10.0,
+                1.0,
+                30,
+                rank.as_mut_ptr(),
+            )
+        };
+        assert_eq!(rc, 0);
+        let rank_mass: f64 = rank.iter().sum();
+        assert!(
+            (rank_mass - cost).abs() < 1e-9,
+            "rank mass={rank_mass} vs cost={cost}"
+        );
+    }
+
+    /// RED: field_cost on an empty (reset) graph returns the error sentinel -1.0 — no silent 0.
+    #[test]
+    fn test_bridge_cost_errors_on_empty_graph() {
+        let _g = TEST_LOCK.lock().unwrap();
+        unsafe {
+            field_reset();
+        }
+        let seed = [0.0f64; 1];
+        let cost = unsafe { field_cost(seed.as_ptr(), std::ptr::null(), 1.0, 1.0, 10) };
+        assert_eq!(
+            cost, -1.0,
+            "empty graph must sentinel, not fabricate a cost"
+        );
     }
 }

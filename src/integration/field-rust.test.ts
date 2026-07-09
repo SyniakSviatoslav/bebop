@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rustBuild, rustSpectral, rustActive, rustVsaSimilarity, rustDispose, rustMemoryBytes } from './field-rust.ts';
+import { rustBuild, rustSpectral, rustActive, rustVsaSimilarity, rustDispose, rustMemoryBytes, rustFieldCost, rustFieldRank, rustFieldArbiter } from './field-rust.ts';
 import { laplacian } from './field-sim.ts';
 
 // Build a path graph adjacency (the canonical test case for the Laplacian).
@@ -162,6 +162,78 @@ test('rust dispose clears state — no stale graph lingers (RED: compute must re
   const restored = await rustSpectral(u0, 5.0, 1.0, 20);
   const massR = Array.from(restored).reduce((a, b) => a + b, 0);
   assert.ok(Math.abs(massR - 1.0) < 1e-2, `mass after rebuild=${massR}`);
+});
+
+// ── PDDL ↔ FIELD BRIDGE (2026-07-09b): field-as-cost-function + final arbiter ──
+
+test('rust field_cost conserves mass under uniform sensitivity (GREEN)', async () => {
+  const n = 20;
+  const A = pathAdj(n);
+  await rustBuild(A);
+  const seed = new Float64Array(n);
+  seed[0] = 1.0; // impulse disruption at node 0
+  const cost = await rustFieldCost(seed, { t: 20, deg: 40 });
+  assert.ok(Math.abs(cost - 1.0) < 1e-2, `uniform-sensitivity cost=${cost} (expect ≈1)`);
+});
+
+test('rust field_rank mass equals field_cost (GREEN: rank is the per-node breakdown)', async () => {
+  const n = 25;
+  const A = pathAdj(n);
+  await rustBuild(A);
+  const seed = new Float64Array(n);
+  seed[0] = 1.0;
+  const cost = await rustFieldCost(seed, { t: 10, deg: 30 });
+  const rank = await rustFieldRank(seed, { t: 10, deg: 30 });
+  const rankMass = Array.from(rank).reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(rankMass - cost) < 1e-9, `rank mass=${rankMass} vs cost=${cost}`);
+});
+
+test('rust field_cost rises with a sensitivity spike at the ripple frontier (GREEN)', async () => {
+  const n = 40;
+  const A = pathAdj(n);
+  await rustBuild(A);
+  const seed = new Float64Array(n);
+  seed[0] = 1.0;
+  const base = await rustFieldCost(seed, { t: 5, deg: 30 });
+  const sens = new Float64Array(n).fill(1.0);
+  sens[20] = 5.0; // weight where the disruption has spread by t=5
+  const weighted = await rustFieldCost(seed, { t: 5, deg: 30, sensitivity: sens });
+  assert.ok(weighted > base, `sensitivity spike must raise cost: base=${base} weighted=${weighted}`);
+});
+
+test('rust arbiter OVERRIDES when field impact vastly exceeds PDDL estimate (RED→GREEN: physics wins)', async () => {
+  const n = 30;
+  const A = pathAdj(n);
+  await rustBuild(A);
+  const seed = new Float64Array(n);
+  seed[0] = 1.0; // a disruption PDDL thinks is cheap
+  // PDDL underestimates (pddlCost tiny) while the field says it ripples far → OVERRIDE.
+  const res = await rustFieldArbiter(seed, 0.01, { t: 30, deg: 40, mismatchRatio: 1.5 });
+  assert.equal(res.verdict, 'override', `expected override, got ${res.verdict} (${res.reason})`);
+  assert.ok(res.fieldCost > res.pddlCost, `field ${res.fieldCost} should beat pddl ${res.pddlCost}`);
+});
+
+test('rust arbiter PERMITS when field impact is within PDDL tolerance (GREEN: field concurs)', async () => {
+  const n = 30;
+  const A = pathAdj(n);
+  await rustBuild(A);
+  const seed = new Float64Array(n);
+  seed[0] = 1.0;
+  // PDDL estimate comfortably above the field cost → field is quiet → permit.
+  const res = await rustFieldArbiter(seed, 5.0, { t: 2, deg: 24, mismatchRatio: 1.5 });
+  assert.equal(res.verdict, 'permit', `expected permit, got ${res.verdict} (${res.reason})`);
+});
+
+test('rust arbiter WARNS when field exceeds PDDL but within the mismatch band (GREEN: grey zone)', async () => {
+  const n = 30;
+  const A = pathAdj(n);
+  await rustBuild(A);
+  const seed = new Float64Array(n);
+  seed[0] = 1.0;
+  // pddlCost chosen so fieldCost (≈1.0) lands between pddlCost and pddlCost*1.5.
+  const res = await rustFieldArbiter(seed, 0.8, { t: 2, deg: 24, mismatchRatio: 1.5 });
+  assert.equal(res.verdict, 'warn', `expected warn, got ${res.verdict} (${res.reason})`);
+  assert.ok(res.fieldCost > res.pddlCost, 'field should exceed PDDL in the warn band');
 });
 
 

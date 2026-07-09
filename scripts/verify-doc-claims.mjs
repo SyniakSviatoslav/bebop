@@ -418,14 +418,14 @@ try {
   const wrap = read('src/integration/field-rust.ts');
   const t = read('src/integration/field-rust.test.ts');
   const d = read('docs/design/bebop-rust-field-core-2026-07-09.md');
-  const exports = /field_build/.test(lib) && /field_spectral/.test(lib) && /field_active/.test(lib) && /vsa_similarity/.test(lib);
+  const exports = /field_build/.test(lib) && /field_spectral/.test(lib) && /field_active/.test(lib) && /vsa_similarity/.test(lib) && /field_cost/.test(lib) && /field_rank/.test(lib);
   const wasm = /wasm32-unknown-unknown/.test(cargo) || /\[lib\]/.test(cargo);
-  const tests = /rust spectral propagator converges/.test(t) && /rust propagator is ONE call/.test(t) && /rust active-set pruning/.test(t) && /rust VSA similarity/.test(t) && /no leak/.test(t) && /dispose clears state/.test(t);
-  const doc = /Chebyshev/.test(d) && /active-set/.test(d) && /AK\.1/.test(d) && /field_reset/.test(d);
+  const tests = /rust spectral propagator converges/.test(t) && /rust propagator is ONE call/.test(t) && /rust active-set pruning/.test(t) && /rust VSA similarity/.test(t) && /no leak/.test(t) && /dispose clears state/.test(t) && /rust field_cost/.test(t) && /rust arbiter/.test(t);
+  const doc = /Chebyshev/.test(d) && /active-set/.test(d) && /AK\.1/.test(d) && /field_reset/.test(d) && /Final Arbiter/.test(d);
   const ok = exports && wasm && tests && doc;
-  check('Rust→WASM field core: wasm32 build + falsifiable tests (spectral + active-set + VSA + concurrency + memory/dispose)', ok,
-    ok ? 'rust-core/ compiles to wasm32 (air-gapped, no RNG/Date); 10 Rust kernel tests + 7 TS tests: spectral propagator, active-set pruning, VSA, deadlock-free concurrency, reset/rebuild + leak-free memory lifecycle + dispose'
-    : 'rust-core/ missing field_spectral/field_active/vsa_similarity/field_reset exports, or field-rust tests/doc gaps');
+  check('Rust→WASM field core: wasm32 build + falsifiable tests (spectral + active-set + VSA + concurrency + memory/dispose + PDDL-field bridge)', ok,
+    ok ? 'rust-core/ compiles to wasm32 (air-gapped, no RNG/Date); 14 Rust kernel + 13 TS tests: spectral, active-set, VSA, deadlock-free concurrency, reset/rebuild, leak-free lifecycle, dispose, field_cost/field_rank bridge + Final Arbiter (permit/warn/override)'
+    : 'rust-core/ missing field_spectral/field_active/vsa_similarity/field_cost/field_rank exports, or field-rust tests/doc gaps');
 }
 
 // --- AJ. Optical search + real-time change prediction (field-optical.ts + predictImpact) ---

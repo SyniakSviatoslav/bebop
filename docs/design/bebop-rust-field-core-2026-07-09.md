@@ -70,14 +70,44 @@ Rust spectral core beats it on the simulation task while k-d wins raw latency on
 1. `deg < 1` → `field_spectral` returns 1 → wrapper throws (test 5 of field-rust.test.ts).
 2. Active-set with `eps = 0` → no pruning, `activePermille == 1000` (identity, not a speedup).
 3. VSA similarity of orthogonal hypervectors ≈ 0, self ≈ dim (not 4225 from the i8-cast bug).
+4. `field_cost` on a reset/empty graph → returns sentinel `-1.0` (no fabricated 0 cost).
+
+## PDDL ↔ FIELD BRIDGE — The Final Arbiter (2026-07-09b)
+The field is the **COST SURFACE**, PDDL is the **EXECUTOR**. The structural gap the operator flagged
+(PDDL logic vs field physics, semantic grounding) is closed numerically, not by bolting PDDL onto the
+PDE:
+
+- `field_rank(seed, sensitivity)` → per-node predicted impact `field[i]·sensitivity[i]`. The Top-K
+  entries ARE the **"Top-K Contours" explainability surface** (where a disruption at `seed` will
+  actually hurt). Sensitivity is the metaplasticity knob: a node's criticality/confidence weights its
+  exposure. `sensitivity = null` → uniform 1.0.
+- `field_cost(seed, sensitivity)` → scalar `Σ field[i]·sensitivity[i]`. This is the numeric cost
+  predicate PDDL consumes. Heat-kernel mass is conserved, so with uniform sensitivity `cost ≡ 1.0`
+  (a unit disruption ripples to total mass 1 — proven GREEN).
+- `rustFieldArbiter(seed, pddlCost, {mismatchRatio, tolerance})` → **THE FINAL ARBITER**, single
+  visible policy (no hidden logic):
+  - `fieldCost ≤ pddlCost` → **PERMIT** (PDDL already accounts for the real impact; field concurs).
+  - `pddlCost < fieldCost ≤ pddlCost·mismatchRatio` → **WARN** (field exceeds PDDL but inside the
+    planner's slack band; surface to explainability / human, still permit).
+  - `fieldCost > pddlCost·mismatchRatio` → **OVERRIDE** (field says PDDL massively under-estimated
+    the physics → physics wins). Proven RED→GREEN: tiny `pddlCost` forces OVERRIDE; large `pddlCost`
+    forces PERMIT.
+
+This makes PDDL and field **argue via a numeric contract**, not a hardcoded authority. `mismatchRatio`
+is the tunable metaplasticity dial (lower → physics dominates; higher → trust the planner).
 
 ## Roadmap (next, per operator "compute shaders")
 - WGPU compute-shader backend for SpMV (`field-matvec` as a shader) → genuine on-GPU parallel
   "optical" primitive. Air-gapped crate `wgpu` fetch is the gate; Rust+SIMD is the safe interim.
 - Port `matrix.ts` SVD/PCA and `kalman` to the same Rust core (flag-OFF twins).
+- Wire `rustFieldArbiter` into the PDDL planner seam (copilot/dual-track) as the numeric gate; expose
+  Top-K Contours to the explainability layer.
 
 ## Claims reference
-AK.1 Rust→WASM field core compiles offline (wasm32) and passes 10 Rust kernel + 7 TS falsifiable
-     tests (spectral, active-set, VSA, concurrency, memory/dispose lifecycle).
+AK.1 Rust→WASM field core compiles offline (wasm32) and passes 14 Rust kernel + 13 TS falsifiable
+     tests (spectral, active-set, VSA, concurrency, memory/dispose lifecycle, PDDL-field bridge +
+     Final Arbiter permit/warn/override).
 AK.2 Spectral propagator is ≥5× faster than JS K-iteration at N=500 with matched physics.
 AK.3 Active-set pruning removes ≥5% of graph per step at eps=1e-3 (frontier localization).
+AK.4 field_cost conserves mass (≡1.0 uniform) and rises with sensitivity spikes; arbiter permits/
+     warns/overrides across the RED+GREEN range.

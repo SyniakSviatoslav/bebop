@@ -141,5 +141,122 @@ export async function rustMemoryBytes(): Promise<number> {
   return liveMem(inst).buffer.byteLength;
 }
 
+/**
+ * BRIDGE B — instant predicted impact (cost) of a disruption `seed` under per-node `sensitivity`.
+ * = Σ_i field[i]·sensitivity[i] where field = exp(-L·t)·seed (Chebyshev, one shot). This is the
+ * numeric cost predicate a PDDL planner consumes. Returns a finite number ≥ 0, or -1 on error.
+ */
+export async function rustFieldCost(
+  seed: Float64Array | number[],
+  opts: { sensitivity?: Float64Array | number[]; t?: number; coeff?: number; deg?: number } = {}
+): Promise<number> {
+  const inst = await getInstance();
+  const n = seed.length;
+  const t = opts.t ?? 5.0;
+  const coeff = opts.coeff ?? 1.0;
+  const deg = opts.deg ?? 24;
+  const uOff = 0;
+  const sOff = n * 8;
+  const need = sOff + n * 8;
+  const buf = ensureMem(inst, need);
+  new Float64Array(buf, uOff, n).set(Float64Array.from(seed));
+  let sensPtr = 0;
+  if (opts.sensitivity) {
+    if (opts.sensitivity.length !== n) throw new Error('rustFieldCost: sensitivity must have length n');
+    new Float64Array(buf, sOff, n).set(Float64Array.from(opts.sensitivity));
+    sensPtr = sOff;
+  }
+  return (inst.exports.field_cost as Function)(uOff, sensPtr, t, coeff, deg) as number;
+}
+
+/**
+ * BRIDGE A — per-node predicted impact vector (ranked downstream exposure of `seed` weighted by
+ * `sensitivity`). Returns Float64Array(n). The Top-K entries are the "Top-K Contours" explainability
+ * surface: where a disruption at `seed` will actually hurt.
+ */
+export async function rustFieldRank(
+  seed: Float64Array | number[],
+  opts: { sensitivity?: Float64Array | number[]; t?: number; coeff?: number; deg?: number } = {}
+): Promise<Float64Array> {
+  const inst = await getInstance();
+  const n = seed.length;
+  const t = opts.t ?? 5.0;
+  const coeff = opts.coeff ?? 1.0;
+  const deg = opts.deg ?? 24;
+  const uOff = 0;
+  const sOff = n * 8;
+  const oOff = sOff + n * 8;
+  const need = oOff + n * 8;
+  const buf = ensureMem(inst, need);
+  new Float64Array(buf, uOff, n).set(Float64Array.from(seed));
+  let sensPtr = 0;
+  if (opts.sensitivity) {
+    if (opts.sensitivity.length !== n) throw new Error('rustFieldRank: sensitivity must have length n');
+    new Float64Array(buf, sOff, n).set(Float64Array.from(opts.sensitivity));
+    sensPtr = sOff;
+  }
+  const rc = (inst.exports.field_rank as Function)(uOff, sensPtr, t, coeff, deg, oOff) as number;
+  if (rc !== 0) throw new Error(`field_rank error code ${rc} (empty graph?)`);
+  return Float64Array.from(new Float64Array(liveMem(inst).buffer, oOff, n));
+}
+
+/**
+ * THE FINAL ARBITER (field vs PDDL) — single visible policy.
+ * Field is the COST SURFACE, PDDL the EXECUTOR. PDDL's proposed action carries a planner-chosen
+ * `pddlCost` (its own symbolic estimate of the disruption the action implies). The field computes
+ * `fieldCost` (real downstream impact of that same disruption). Conflict rule:
+ *   • fieldCost <= pddlCost              → PERMIT (PDDL already accounts for the real impact; field concurs).
+ *   • pddlCost < fieldCost <= pddlCost*mismatchRatio → WARN (field exceeds PDDL but inside the
+ *     planner's own slack band — permit but surface to the explainability layer / human).
+ *   • fieldCost > pddlCost*mismatchRatio → OVERRIDE (field says PDDL massively under-estimated the
+ *     physics; the planner "spery`czetsya" with reality). Returns { verdict, fieldCost, pddlCost }
+ *     so the explainability layer can show why the field won.
+ *
+ * `mismatchRatio` = how far PDDL may trail the field before the field wins (the metaplasticity knob;
+ * raise it to trust PDDL more, lower it to let physics dominate). `tolerance` is a hard floor below
+ * which any fieldCost is always permitted regardless of PDDL (a contract SLA band for trivial impact).
+ */
+export type ArbiterVerdict = 'permit' | 'warn' | 'override';
+export interface ArbiterResult {
+  verdict: ArbiterVerdict;
+  fieldCost: number;
+  pddlCost: number;
+  reason: string;
+}
+export async function rustFieldArbiter(
+  seed: Float64Array | number[],
+  pddlCost: number,
+  opts: {
+    sensitivity?: Float64Array | number[];
+    t?: number;
+    coeff?: number;
+    deg?: number;
+    tolerance?: number; // fieldCost at or below this is always permitted (SLA floor)
+    mismatchRatio?: number; // field wins when fieldCost > pddlCost * mismatchRatio
+  } = {}
+): Promise<ArbiterResult> {
+  const tolerance = opts.tolerance ?? 0.0;
+  const mismatchRatio = opts.mismatchRatio ?? 1.5;
+  const fieldCost = await rustFieldCost(seed, opts);
+  if (fieldCost < 0) return { verdict: 'override', fieldCost, pddlCost, reason: 'field: empty graph / error' };
+  if (fieldCost <= tolerance || fieldCost <= pddlCost) {
+    return { verdict: 'permit', fieldCost, pddlCost, reason: `fieldCost ${fieldCost.toFixed(4)} ≤ pddlCost ${pddlCost.toFixed(4)} (PDDL covers impact)` };
+  }
+  if (fieldCost <= pddlCost * mismatchRatio) {
+    return {
+      verdict: 'warn',
+      fieldCost,
+      pddlCost,
+      reason: `field ${fieldCost.toFixed(4)} > PDDL ${pddlCost.toFixed(4)} but within ${mismatchRatio}× band`,
+    };
+  }
+  return {
+    verdict: 'override',
+    fieldCost,
+    pddlCost,
+    reason: `field ${fieldCost.toFixed(4)} > PDDL ${pddlCost.toFixed(4)}×${mismatchRatio} → physics overrides planner`,
+  };
+}
+
 /** Path to the prebuilt WASM (exposed for tests). */
 export const RUST_WASM_PATH = WASM_PATH;
