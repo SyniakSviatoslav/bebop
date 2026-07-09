@@ -1,0 +1,5 @@
+# wasm32 linker flags: pre-allocate 64 MiB linear memory (initial) so multi-scale callers
+# never trigger a mid-run `memory.grow` (which detaches the JS-side buffer and causes
+# "memory access out of bounds" inside the wasm allocator). `maximum` lets it grow if needed.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=--initial-memory=67108864", "-C", "link-arg=--max-memory=268435456"]

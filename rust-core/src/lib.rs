@@ -14,32 +14,43 @@
 //!
 //! SOVEREIGN-CORE: no `std::rand`, no `std::time::SystemTime`, no network. Deterministic.
 
-// ── linear-memory scratch (single instance; deterministic) ──
-// We keep the CSR of the LAST built graph here so repeated propagations don't re-upload it.
-static mut ROW_PTR: Vec<i32> = Vec::new();
-static mut COL_IDX: Vec<i32> = Vec::new();
-static mut N: i32 = 0;
-
+// ── graph state (single instance; deterministic) ──
+// Wrapped in a Mutex so concurrent propagations (e.g. parallel `cargo test`) can't race on
+// the CSR. No `static mut` → no UB, no shared-ref-to-mut-static warnings.
+struct GraphState {
+    row_ptr: Vec<i32>,
+    col_idx: Vec<i32>,
+    n: i32,
+}
+static STATE: std::sync::Mutex<GraphState> = std::sync::Mutex::new(GraphState {
+    row_ptr: Vec::new(),
+    col_idx: Vec::new(),
+    n: 0,
+});
 /// Upload a CSR adjacency (A, undirected treated as L=D-A) of an n-node graph.
 /// `row_ptr` has n+1 entries, `col_idx` has nnz entries. Returns 0 on success.
 #[no_mangle]
 pub extern "C" fn field_build(row_ptr: *const i32, col_idx: *const i32, nnz: i32, n: i32) -> i32 {
     if n <= 0 || nnz < 0 { return 1; }
-    unsafe {
-        ROW_PTR = core::slice::from_raw_parts(row_ptr, (n + 1) as usize).to_vec();
-        COL_IDX = core::slice::from_raw_parts(col_idx, nnz as usize).to_vec();
-        N = n;
-    }
+    let rp = unsafe { core::slice::from_raw_parts(row_ptr, (n + 1) as usize).to_vec() };
+    let ci = unsafe { core::slice::from_raw_parts(col_idx, nnz as usize).to_vec() };
+    let mut st = STATE.lock().unwrap();
+    st.row_ptr = rp;
+    st.col_idx = ci;
+    st.n = n;
     0
 }
 
-/// Degree of every node (for the unnormalized Laplacian L = D - A and the eigenvalue bound).
-fn degrees(n: usize) -> Vec<f64> {
-    let rp = unsafe { &ROW_PTR };
+/// Snapshot the stored CSR as owned Vecs (clone under the lock, then release — no nested locks).
+fn with_graph<T>(f: impl FnOnce(&[i32], &[i32], usize) -> T) -> T {
+    let st = STATE.lock().unwrap();
+    f(&st.row_ptr, &st.col_idx, st.n as usize)
+}
+
+/// Degree of every node from a CSR row-pointer (for L = D - A and the eigenvalue bound).
+fn degrees_from(rp: &[i32], n: usize) -> Vec<f64> {
     let mut d = vec![0.0f64; n];
-    for i in 0..n {
-        d[i] = (rp[i + 1] - rp[i]) as f64;
-    }
+    for i in 0..n { d[i] = (rp[i + 1] - rp[i]) as f64; }
     d
 }
 
@@ -55,39 +66,35 @@ fn lambda_max(d: &[f64]) -> f64 {
 /// field still propagates OUT of the active set. `mask` = null → all nodes.
 #[no_mangle]
 pub extern "C" fn field_matvec(x: *const f64, y: *mut f64, mask: *const u8) {
-    let n = unsafe { N as usize };
-    let rp = unsafe { &ROW_PTR };
-    let ci = unsafe { &COL_IDX };
-    let xs = unsafe { core::slice::from_raw_parts(x, n) };
-    let ys = unsafe { core::slice::from_raw_parts_mut(y, n) };
-    let ms: Option<&[u8]> = if mask.is_null() { None } else { Some(unsafe { core::slice::from_raw_parts(mask, n) }) };
-    let d = degrees(n);
-    for i in 0..n {
-        if let Some(m) = ms { if m[i] == 0 { ys[i] = 0.0; continue; } }
-        let mut acc = d[i] * xs[i]; // D·x
-        for k in rp[i] as usize..rp[i + 1] as usize {
-            acc -= xs[ci[k] as usize]; // - A·x
+    with_graph(|rp, ci, n| {
+        let xs = unsafe { core::slice::from_raw_parts(x, n) };
+        let ys = unsafe { core::slice::from_raw_parts_mut(y, n) };
+        let ms: Option<&[u8]> = if mask.is_null() { None } else { Some(unsafe { core::slice::from_raw_parts(mask, n) }) };
+        let d = degrees_from(rp, n);
+        for i in 0..n {
+            if let Some(m) = ms { if m[i] == 0 { ys[i] = 0.0; continue; } }
+            let mut acc = d[i] * xs[i]; // D·x
+            for k in rp[i] as usize..rp[i + 1] as usize {
+                acc -= xs[ci[k] as usize]; // - A·x
+            }
+            ys[i] = acc;
         }
-        ys[i] = acc;
-    }
+    });
 }
 
 /// A. SPECTRAL PROPAGATOR — Chebyshev approximation of u(t) = exp(-coeff·L·t) · u0.
 /// One-shot: no K-loop. `deg` = Chebyshev degree (≈ 16-24 gives machine-precision for smooth spectra).
 /// Writes the result into `out` (len n). Returns 0 on success.
-///
-/// f(L) ≈ (c0/2) T0(ã) + Σ_{k=1..deg} c_k T_k(ã(L)),  ã maps [0,λmax]→[-1,1].
-/// c_k = (2/π) ∫_0^π exp(-coeff·t·λ(θ)) cos(kθ) dθ,  λ(θ)=λmax·(1-cosθ)/2.
-/// We evaluate c_k by a deterministic D-point trapezoid rule (no RNG).
 #[no_mangle]
 pub extern "C" fn field_spectral(
     u0: *const f64, t: f64, coeff: f64, deg: i32, out: *mut f64,
 ) -> i32 {
-    let n = unsafe { N as usize };
+    let snapshot = with_graph(|rp, ci, n| (rp.to_vec(), ci.to_vec(), n));
+    let (rp, ci, n) = snapshot;
     if n == 0 || deg < 1 { return 1; }
     let xs = unsafe { core::slice::from_raw_parts(u0, n) };
     let os = unsafe { core::slice::from_raw_parts_mut(out, n) };
-    let d = degrees(n);
+    let d = degrees_from(&rp, n);
     let lamax = lambda_max(&d);
     let b = lamax; // interval [0, b]
 
@@ -111,7 +118,7 @@ pub extern "C" fn field_spectral(
     let mut t0 = xs.to_vec();            // T0 = I
     // t1 = ã(L)·u0 = (2/b)·L·u0 - u0
     let mut lu = vec![0.0f64; n];
-    field_matvec_raw(&t0, &mut lu);
+    field_matvec_raw(&t0, &mut lu, &rp, &ci);
     let mut t1 = vec![0.0f64; n];
     for i in 0..n { t1[i] = (2.0 / b) * lu[i] - t0[i]; }
 
@@ -124,7 +131,7 @@ pub extern "C" fn field_spectral(
     for k in 2..=deg as usize {
         // t_next = 2·ã·t_cur - t_prev
         let mut lu2 = vec![0.0f64; n];
-        field_matvec_raw(&t_cur, &mut lu2);
+        field_matvec_raw(&t_cur, &mut lu2, &rp, &ci);
         let mut t_next = vec![0.0f64; n];
         for i in 0..n { t_next[i] = 2.0 * ((2.0 / b) * lu2[i] - t_cur[i]) - t_prev[i]; }
         for i in 0..n { res[i] += c[k] * t_next[i]; }
@@ -144,7 +151,8 @@ pub extern "C" fn field_active(
     u0: *const f64, steps: i32, dt: f64, coeff: f64, eps: f64,
     out: *mut f64, active_count: *mut i32,
 ) -> i32 {
-    let n = unsafe { N as usize };
+    let snapshot = with_graph(|rp, ci, n| (rp.to_vec(), ci.to_vec(), n));
+    let (rp, ci, n) = snapshot;
     if n == 0 { return 0; }
     let xs = unsafe { core::slice::from_raw_parts(u0, n) };
     let os = unsafe { core::slice::from_raw_parts_mut(out, n) };
@@ -154,7 +162,7 @@ pub extern "C" fn field_active(
     let mut lu = vec![0.0f64; n];
     let mut total_active = 0usize;
     for s in 0..steps as usize {
-        field_matvec_raw(&u, &mut lu);
+        field_matvec_raw(&u, &mut lu, &rp, &ci);
         let mut next = vec![0.0f64; n];
         let mut active_now = 0usize;
         for i in 0..n {
@@ -164,8 +172,6 @@ pub extern "C" fn field_active(
             if fabs(du) < eps { mask[i] = 0; } else { active_now += 1; }
         }
         // reactivate neighbors of active nodes (so the wave can advance)
-        let rp = unsafe { &ROW_PTR };
-        let ci = unsafe { &COL_IDX };
         for i in 0..n {
             if mask[i] == 1 {
                 for k in rp[i] as usize..rp[i + 1] as usize { mask[ci[k] as usize] = 1; }
@@ -179,12 +185,10 @@ pub extern "C" fn field_active(
     steps
 }
 
-/// Raw L·x using the stored CSR (unnormalized Laplacian). Internal helper.
-fn field_matvec_raw(x: &[f64], y: &mut [f64]) {
-    let n = unsafe { N as usize };
-    let rp = unsafe { &ROW_PTR };
-    let ci = unsafe { &COL_IDX };
-    let d = degrees(n);
+/// Raw L·x using a CSR passed by reference (no global lock — caller owns the slices).
+fn field_matvec_raw(x: &[f64], y: &mut [f64], rp: &[i32], ci: &[i32]) {
+    let n = y.len();
+    let d = degrees_from(rp, n);
     for i in 0..n {
         let mut acc = d[i] * x[i];
         for k in rp[i] as usize..rp[i + 1] as usize {
@@ -342,6 +346,27 @@ mod tests {
         assert!((fexp(0.0) - 1.0).abs() < 1e-12);
         assert!((fexp(1.0) - core::f64::consts::E).abs() < 1e-9, "fexp(1)={}", fexp(1.0));
         assert!((fcos(0.0) - 1.0).abs() < 1e-12);
+    }
+
+    /// RED/regression: concurrent propagations must NOT deadlock the global Mutex.
+    /// Earlier version nested with_graph() (lock -> degrees() -> lock) and hung on native targets.
+    #[test]
+    fn test_concurrent_propagations_no_deadlock() {
+        std::thread::scope(|s| {
+            for tid in 0..4u32 {
+                s.spawn(move || {
+                    let n = 50 + tid as i32 * 10;
+                    let (rp, ci, nnz) = path_graph(n);
+                    unsafe { field_build(rp.as_ptr(), ci.as_ptr(), nnz, n); }
+                    let mut u0 = vec![0.0f64; n as usize];
+                    u0[0] = 1.0;
+                    let mut out = vec![0.0f64; n as usize];
+                    unsafe { field_spectral(u0.as_ptr(), 2.0, 1.0, 20, out.as_mut_ptr()); }
+                    let mass: f64 = out.iter().sum();
+                    assert!((mass - 1.0).abs() < 1e-2, "tid {} mass={}", tid, mass);
+                });
+            }
+        });
     }
 }
 

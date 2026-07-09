@@ -21,15 +21,30 @@ const WASM_PATH = join(__dirname, '../../rust-core/target/wasm32-unknown-unknown
 
 // Singleton instance (deterministic, single graph at a time — matches the Rust static scratch).
 let _module: WebAssembly.Instance | null = null;
-let _mem: WebAssembly.Memory | null = null;
 
 async function getInstance(): Promise<WebAssembly.Instance> {
   if (_module) return _module;
   const bytes = readFileSync(WASM_PATH);
   const mod = await WebAssembly.compile(bytes);
   _module = await WebAssembly.instantiate(mod, {});
-  _mem = (_module.exports.memory as WebAssembly.Memory);
+  // NOTE: never cache the Memory object's `.buffer` — `memory.grow` detaches it.
+  // Always read `inst.exports.memory` fresh (see `liveMem()`).
   return _module;
+}
+
+/** Live memory view — re-fetched every call so a mid-run grow never detaches our buffer. */
+function liveMem(inst: WebAssembly.Instance): WebAssembly.Memory {
+  return inst.exports.memory as WebAssembly.Memory;
+}
+
+/** Grow the wasm memory if needed, then return the LIVE buffer (post-grow). */
+function ensureMem(inst: WebAssembly.Instance, needBytes: number): ArrayBuffer {
+  const mem = liveMem(inst);
+  if (mem.buffer.byteLength < needBytes) {
+    const pages = Math.ceil((needBytes - mem.buffer.byteLength) / 65536);
+    mem.grow(pages); // throws if it exceeds the module's declared max (raised to 64MiB via .cargo config)
+  }
+  return liveMem(inst).buffer; // re-fetch: grow detaches the old buffer
 }
 
 /** Upload a symmetric adjacency matrix as CSR into the Rust core. Call before propagate*. */
@@ -45,13 +60,12 @@ export async function rustBuild(A: number[][]): Promise<void> {
   rowPtr[n] = cols.length;
   const colArr = Int32Array.from(cols);
 
-  const mem = _mem!;
   const rpOff = 0;
   const ciOff = rowPtr.byteLength;
   const need = ciOff + colArr.byteLength;
-  if (mem.buffer.byteLength < need) mem.grow(Math.ceil((need - mem.buffer.byteLength) / 65536));
-  new Int32Array(mem.buffer, rpOff, n + 1).set(rowPtr);
-  new Int32Array(mem.buffer, ciOff, colArr.length).set(colArr);
+  const buf = ensureMem(inst, need);
+  new Int32Array(buf, rpOff, n + 1).set(rowPtr);
+  new Int32Array(buf, ciOff, colArr.length).set(colArr);
   (inst.exports.field_build as Function)(rpOff, ciOff, colArr.length, n);
 }
 
@@ -62,16 +76,15 @@ export async function rustBuild(A: number[][]): Promise<void> {
 export async function rustSpectral(u0: Float64Array | number[], t: number, coeff = 1.0, deg = 20): Promise<Float64Array> {
   const inst = await getInstance();
   const n = u0.length;
-  const mem = _mem!;
   const uOff = 0;
   const oOff = n * 8;
   const need = oOff + n * 8;
-  if (mem.buffer.byteLength < need) mem.grow(Math.ceil((need - mem.buffer.byteLength) / 65536));
+  const buf = ensureMem(inst, need);
   const ua = Float64Array.from(u0);
-  new Float64Array(mem.buffer, uOff, n).set(ua);
+  new Float64Array(buf, uOff, n).set(ua);
   const rc = (inst.exports.field_spectral as Function)(uOff, t, coeff, deg, oOff) as number;
   if (rc !== 0) throw new Error(`field_spectral error code ${rc} (deg must be ≥1)`);
-  return Float64Array.from(new Float64Array(mem.buffer, oOff, n));
+  return Float64Array.from(new Float64Array(liveMem(inst).buffer, oOff, n));
 }
 
 /**
@@ -87,30 +100,28 @@ export async function rustActive(
   const dt = opts.dt ?? 0.05;
   const coeff = opts.coeff ?? 1.0;
   const eps = opts.eps ?? 1e-4;
-  const mem = _mem!;
   const uOff = 0;
   const oOff = n * 8;
   const aOff = oOff + n * 8;
   const need = aOff + 8;
-  if (mem.buffer.byteLength < need) mem.grow(Math.ceil((need - mem.buffer.byteLength) / 65536));
+  const buf = ensureMem(inst, need);
   const ua = Float64Array.from(u0);
-  new Float64Array(mem.buffer, uOff, n).set(ua);
+  new Float64Array(buf, uOff, n).set(ua);
   (inst.exports.field_active as Function)(uOff, steps, dt, coeff, eps, oOff, aOff);
-  const active = new Int32Array(mem.buffer, aOff, 1)[0];
-  return { field: Float64Array.from(new Float64Array(mem.buffer, oOff, n)), activePermille: active };
+  const active = new Int32Array(liveMem(inst).buffer, aOff, 1)[0];
+  return { field: Float64Array.from(new Float64Array(liveMem(inst).buffer, oOff, n)), activePermille: active };
 }
 
 /** VSA similarity (operator fix D: SIMD-ready hypervector dot-product in Rust). */
 export async function rustVsaSimilarity(a: Float64Array | number[], b: Float64Array | number[]): Promise<number> {
   const inst = await getInstance();
   const n = a.length;
-  const mem = _mem!;
   const aOff = 0;
   const bOff = n * 8;
   const need = bOff + n * 8;
-  if (mem.buffer.byteLength < need) mem.grow(Math.ceil((need - mem.buffer.byteLength) / 65536));
-  new Float64Array(mem.buffer, aOff, n).set(Float64Array.from(a));
-  new Float64Array(mem.buffer, bOff, n).set(Float64Array.from(b));
+  const buf = ensureMem(inst, need);
+  new Float64Array(buf, aOff, n).set(Float64Array.from(a));
+  new Float64Array(buf, bOff, n).set(Float64Array.from(b));
   return (inst.exports.vsa_similarity as Function)(aOff, bOff, n) as number;
 }
 
