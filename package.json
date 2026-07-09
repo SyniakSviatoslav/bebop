@@ -1,6 +1,6 @@
 {
   "name": "bebop-agent",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Bebop — your own coding agent. Warm cosmo-noir, a deterministic guard OS, living memory, post-quantum node identity, and a math-proven telemetry governor. AGPL-3.0.",
   "license": "AGPL-3.0-or-later",
   "type": "module",
@@ -57,7 +57,7 @@
     "boot": "tsx bebop.ts boot",
     "start": "tsx bebop.ts",
     "build": "cd crates/core && bash build.sh",
-    "test": "node --test --import tsx 'src/**/*.test.ts'",
+    "test": "node --test --import tsx $(find src -name '*.test.ts')",
     "typecheck": "tsc --noEmit",
     "recall": "tsx bebop.ts recall"
   },

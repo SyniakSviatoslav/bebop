@@ -4,7 +4,25 @@ All notable changes to Bebop are documented here. Format: keep it falsifiable �
 backed by a RED+GREEN test in `src/**/*.test.ts` (authoritative runner:
 `node --test --import tsx 'src/**/*.test.ts'`).
 
-## [0.3.4] — 2026-07-09 — "CI red fix: harvest test no longer coupled to on-disk skills"
+## [0.3.5] — 2026-07-09 — "Release workflow fix: portable test command (Node 20/22)"
+
+### Fixed
+- **GitHub Releases stuck at v0.2.0**: the `release.yml` workflow ran on Node 20.19, where
+  `node --test` does NOT expand the quoted glob `'src/**/*.test.ts'` (needs `globstar`, off in
+  CI's non-interactive bash). The Falsifiable-tests step failed with
+  `Could not find 'src/**/*.test.ts'`, so NO v0.3.x Release was ever published — even though
+  `ci.yml` (Node 22) was green. Root cause of "repo shows current release 0.2".
+  - `package.json` `test` script now expands via `find src -name '*.test.ts'` (shell-independent,
+    works on Node 20 and 22 — no globstar needed).
+  - `release.yml` aligned to `node-version: '22'` (matches the green CI run).
+
+### Verification (fresh, on main)
+- `npm test` (find-based, the exact release command) → 351 pass / 0 fail / 0 skipped.
+- `pnpm run typecheck` → 0 errors. `npm run boot` (Guard-OS self-cert) → certified.
+- This is the precise command+Node the release workflow now runs; it passes locally, so the
+  release run will publish v0.3.5 (latest) instead of stalling at 0.2.0.
+
+
 
 ### Fixed
 - **CI was RED on main**: `src/harvest.test.ts` (test "harvest() report bundles candidates +
