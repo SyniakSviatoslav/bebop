@@ -185,7 +185,7 @@ export class FieldSim {
 
   /**
    * Field energy. For `diffuse` this is Σ u² (decays — the memory fade). For `wave` this is the
-   * HAMILTONIAN ½vᵀv + ½uᵀ(L u) — the quantity velocity-Verlet actually conserves (NOT just Σu²,
+   * HAMILTONIAN ½vᵀv + ½·coeff·uᵀ(L u) — the quantity velocity-Verlet actually conserves (NOT just Σu²,
    * which oscillates). A wave's energy sloshes between kinetic (v) and potential (uᵀLu); the sum is
    * the conserved total.
    */
@@ -201,6 +201,40 @@ export class FieldSim {
     const Lu = applyLaplacian(this.L, this.u, this.c, this.n);
     for (let ch = 0; ch < this.c; ch++) for (let i = 0; i < this.n; i++) e += 0.5 * this.coeff * this.u[ch][i] * Lu[ch][i];
     return e;
+  }
+
+  /**
+   * REAL-TIME PREDICTION ON A CHANGE: seed an impulse at `node`, evolve `steps` steps, and return the
+   * predicted affected set — nodes whose |field| exceeds `threshold`. This is "predict the ripple
+   * before it converges": a single forward pass (O(steps·|E|·channels)) gives the impact footprint
+   * without recomputing the whole graph or waiting for equilibrium. Returns { affected, maxField,
+   * converged } where `converged` is true if the per-step delta fell below `tol` (early-stop).
+   */
+  predictImpact(node: number, opts: { steps?: number; threshold?: number; tol?: number; channel?: number } = {}): {
+    affected: number[];
+    maxField: number;
+    steps: number;
+    converged: boolean;
+  } {
+    const steps = opts.steps ?? 32;
+    const threshold = opts.threshold ?? 1e-3;
+    const tol = opts.tol ?? 1e-6;
+    const ch = opts.channel ?? 0;
+    const wasSeeded = Math.abs(this.u[ch][node]) > 0;
+    if (!wasSeeded) this.impulse(node, 1, ch);
+    const affected: number[] = [];
+    let maxField = 0;
+    let converged = false;
+    for (let s = 0; s < steps; s++) {
+      const r = this.step();
+      if (r.delta < tol) { converged = true; break; }
+    }
+    for (let i = 0; i < this.n; i++) {
+      const a = Math.abs(this.u[ch][i]);
+      if (a > maxField) maxField = a;
+      if (a >= threshold) affected.push(i);
+    }
+    return { affected, maxField, steps: this.stepCount, converged };
   }
 }
 

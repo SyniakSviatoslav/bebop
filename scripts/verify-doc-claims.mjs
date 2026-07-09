@@ -421,5 +421,21 @@ try {
       : 'rust-core/ missing Cargo.toml or the laplacian/wave_step signatures');
 }
 
+// --- AJ. Optical search + real-time change prediction (field-optical.ts + predictImpact) ---
+{
+ const f = read('src/integration/field-sim.ts');
+ const o = read('src/integration/field-optical.ts');
+ const b = read('src/integration/benchmark-field-vs-tree.ts');
+ const t = read('src/integration/field-optical.test.ts');
+ const d = read('docs/design/bebop-optical-search-prediction-telemetry-2026-07-09.md');
+ const fn = /predictImpact/.test(f) && /opticalNodeSearch/.test(o) && /vsaNodeSearch/.test(o)
+   && /benchmarkFieldVsTree/.test(b) && /predictThenSearch/.test(o);
+ const test = /predictImpact forward-predicts/.test(t) && /k-d tree is BLIND/.test(t) && /optical search ranks the structurally/.test(t);
+ const doc = /predictImpact/.test(d) && /k-d tree/.test(d) && /Sparse Laplacian/.test(d) && /Verdict/.test(d);
+ check('Optical search + real-time change prediction: field/optical/VSA vs k-d tree, telemetry report', fn && test && doc,
+   fn && test && doc ? 'predictImpact + opticalRecall + VSA ranking + benchmark vs k-d tree, all RED+GREEN, report with real telemetry'
+     : 'field-optical/benchmark missing predictImpact/opticalNodeSearch/vsaNodeSearch/benchmarkFieldVsTree or test/doc gaps');
+}
+
 console.log(`\n  ${fails ? `✗ ${fails} doc-claim check(s) FAILED — fix before commit/release` : '✓ all doc claims backed by live proof'}`);
 process.exit(fails ? 1 : 0);
