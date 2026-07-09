@@ -28,7 +28,7 @@ These are real EV but explicitly out of scope per the operator's directive
 | D2 | Wire ICA pipeline into `governor.ts` (today only `cycleConsistency` + `pcaAnomaly` are wired flag-OFF) | module is verified but un-wired into runtime | after D1 shadow run proves stable |
 | D3 | `selectZenoh` + `prove` into kernel dispatch (flag-OFF, RED+GREEN) | **DONE 2026-07-09** — wired into the dispatch SHELL (`runDispatch`, not the pure kernel — selection does IO); `cfg.meshMode` flag-OFF; fail-closed to LocalMesh twin; RED+GREEN+falsifiable in `src/loop.test.ts` | ✅ landed |
 | D4 | Dowiz ETA model (quantileLoss + huber, prediction intervals) | needs a real ETA seam in `apps/api` | when ETA module located + scoped |
-| D5 | RAG noise-cleaning (pcaFit/pcaProject before recall in `knowledge.ts`) | feature, not a correctness blocker | after D1 |
+| D5 | RAG noise-cleaning (pcaFit/pcaProject before recall in `knowledge.ts`) | **DONE 2026-07-09** — `denoiseHits` (flag-OFF `denoise` RecallOpt) demotes off-manifold outlier hits by centroid-distance >1σ (centroid, not PCA-residual: at handful-of-hits sample size the outlier dominates PC1 and inverts the signal); DEMOTE-never-drop; RED+GREEN in `knowledge.test.ts` | ✅ landed |
 | D6 | Causal graph over module-import adjacency (counterfactual "points of failure") | R&D, needs real trace | separate causal-discovery arc |
 
 D1/D2 are the highest-EV of the deferred set (they close the loop on the two modules

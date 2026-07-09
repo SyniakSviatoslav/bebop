@@ -42,6 +42,12 @@ export interface RecallOpts {
    *  Off by default — the graph/vector score stays the source of truth; optical only re-orders
    *  weak/equal-score bands as a third associative signal. */
   opticalRecall?: boolean;
+  /** D5 RAG noise-cleaning (flag-OFF): PCA the candidate hit vectors, then DEMOTE hits whose PCA
+   *  reconstruction residual is an outlier (> mean + k·std of residuals) — an off-manifold hit is
+   *  semantic noise dragged in by the weak vector fallback. Pure/deterministic (matrix.ts PCA, no
+   *  RNG/training). Off by default: the graph/vector score stays the source of truth; denoise only
+   *  RE-RANKS (never drops) so a false-positive can't erase a real hit. */
+  denoise?: boolean;
 }
 
 // Deterministic text → n×n real vector (char-bucketed). Same spirit as the bundled VSA codebook;
@@ -108,7 +114,42 @@ function recallLocal(query: string, k = 5, opts: RecallOpts = {}): { id: string;
     for (const { h } of withOrig) hits.push(h);
   }
 
+  // 4) D5 RAG NOISE-CLEANING (flag-OFF) — demote off-manifold outlier hits (see denoiseHits).
+  if (opts.denoise) denoiseHits(hits);
+
   return hits.sort((a, b) => b.score - a.score);
+}
+
+/**
+ * D5 RAG noise-cleaning (pure, deterministic). Project each hit's text to a fixed vector, then DEMOTE
+ * (never drop) hits whose distance to the cluster CENTROID is an outlier (> mean + 1σ of distances) —
+ * an off-manifold hit is semantic noise dragged in by the weak vector fallback. Centroid-distance is
+ * used deliberately instead of PCA-reconstruction residual: with only a handful of hits the outlier
+ * would dominate the top principal axis and reconstruct *well*, inverting the signal (the cluster,
+ * not the outlier, would look anomalous). Centroid distance is robust at this sample size. Mutates
+ * `hits[i].score` in place; a mis-flagged real hit is only halved, so it stays recoverable. No-op for
+ * <3 hits (no stable centroid). Returns the demoted indices (for falsifiable assertions).
+ */
+export function denoiseHits(hits: { text: string; score: number }[]): number[] {
+  if (hits.length < 3) return [];
+  const n = 8;
+  const vecs = hits.map((h) => projectText(h.text, n));
+  const dim = vecs[0].length;
+  const centroid = new Array<number>(dim).fill(0);
+  for (const v of vecs) for (let i = 0; i < dim; i++) centroid[i] += v[i] / vecs.length;
+  const dist = vecs.map((v) => {
+    let s = 0;
+    for (let i = 0; i < dim; i++) { const d = v[i] - centroid[i]; s += d * d; }
+    return Math.sqrt(s);
+  });
+  const mean = dist.reduce((a, b) => a + b, 0) / dist.length;
+  const std = Math.sqrt(dist.reduce((a, r) => a + (r - mean) ** 2, 0) / dist.length);
+  const cutoff = mean + std; // > 1σ from centroid ⇒ off-manifold noise
+  const demoted: number[] = [];
+  hits.forEach((h, i) => {
+    if (std > 1e-9 && dist[i] > cutoff) { h.score = Number((h.score * 0.5).toFixed(4)); demoted.push(i); }
+  });
+  return demoted;
 }
 
 // Call the living-knowledge §0·GP retriever (optional, vendored from dowiz). Returns ranked

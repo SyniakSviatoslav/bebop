@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { recall, estimateTokens } from './knowledge.ts';
+import { recall, estimateTokens, denoiseHits } from './knowledge.ts';
 
 // The living-knowledge retriever + VSA cli are NOT bundled in this standalone repo.
 // recall() must (a) use the BUNDLED in-process living memory (VSA + graph), returning REAL payload
@@ -70,4 +70,34 @@ test('RED: graph-score hits dominate optical re-ranking (falsifiable)', () => {
     const lastGraph = r.hits.map(s).lastIndexOf(1);
     assert.ok(lastGraph < firstWeak, 'graph-score hits must stay ranked above weak hits even with optical on');
   }
+});
+
+// ── D5: RAG noise-cleaning (flag-OFF), pure denoiseHits ──
+
+test('GREEN: denoiseHits demotes an off-manifold noise hit amid a coherent cluster', () => {
+  // A tight cluster of near-identical texts + one wildly different (off-manifold) outlier.
+  const hits = [
+    { text: 'the kernel decide fold replay is pure and deterministic', score: 1 },
+    { text: 'the kernel decide fold replay stays pure deterministic law', score: 1 },
+    { text: 'the kernel decide fold replay is a pure deterministic core', score: 1 },
+    { text: 'zzzz qqqq wwww vvvv unrelated gibberish noise token', score: 1 },
+  ];
+  const demoted = denoiseHits(hits);
+  assert.ok(demoted.includes(3), `the off-manifold hit (idx 3) must be demoted, got demoted=${JSON.stringify(demoted)}`);
+  assert.equal(hits[3].score, 0.5, 'demoted hit score must be halved, never zeroed (recoverable)');
+});
+
+test('RED: denoiseHits demotes NOTHING when all hits are on the same manifold (falsifiable)', () => {
+  const hits = [
+    { text: 'kernel decide fold replay pure deterministic', score: 1 },
+    { text: 'kernel decide fold replay pure deterministic core', score: 1 },
+    { text: 'kernel decide fold replay pure deterministic law', score: 1 },
+  ];
+  const demoted = denoiseHits(hits);
+  assert.equal(demoted.length, 0, `coherent cluster must have no outliers, got demoted=${JSON.stringify(demoted)}`);
+});
+
+test('RED: denoiseHits is a no-op for <3 hits (PCA degenerate) — never fabricates a demotion', () => {
+  const hits = [{ text: 'a b c', score: 1 }, { text: 'x y z totally different', score: 1 }];
+  assert.deepEqual(denoiseHits(hits), [], 'fewer than 3 hits must never be denoised');
 });
