@@ -19,6 +19,7 @@ import {
   findCycle,
   extractImports,
   extractWikilinks,
+  mineGraph,
 } from './arch-mine.ts';
 import { scanProjects, reverseEngineeringLoop } from './loop.ts';
 
@@ -153,4 +154,28 @@ test('GREEN+RED: cap is DYNAMIC — under the EVD ceiling every node is kept (no
   const forced = buildAdjacency(mods, { cap: 4 });
   assert.ok(forced.nodes.length <= 4, 'explicit small cap truncates to ≤4');
   assert.ok(forced.nodes.length < 12, 'explicit cap removes nodes (dynamic would not)');
+});
+
+// ── D6: aggregate mineGraph report (flag-OFF archMine pass consumes this) ──
+
+test('GREEN: mineGraph aggregates cycle + orphans + clusters in one deterministic report', () => {
+  const rep = mineGraph([
+    { id: 'p:a', source: "import x from './b.ts';" },
+    { id: 'p:b', source: "import y from './c.ts';" },
+    { id: 'p:c', source: "import z from './a.ts';" }, // 3-node cycle
+    { id: 'p:orphan', source: '// alone' },
+  ]);
+  assert.equal(rep.moduleCount, 4, 'counts all modules');
+  assert.ok(rep.cycle && rep.cycle.length >= 3, `detects the cycle, got ${JSON.stringify(rep.cycle)}`);
+  assert.ok(rep.isolated.includes('p:orphan'), 'flags the orphan');
+});
+
+test('RED: mineGraph on an acyclic, fully-connected set reports no cycle and no orphans', () => {
+  const rep = mineGraph([
+    { id: 'p:a', source: "import x from './b.ts';" },
+    { id: 'p:b', source: "import y from './c.ts';" },
+    { id: 'p:c', source: '// leaf' },
+  ]);
+  assert.equal(rep.cycle, null, 'acyclic ⇒ no cycle');
+  assert.equal(rep.isolated.length, 0, 'connected ⇒ no orphans');
 });

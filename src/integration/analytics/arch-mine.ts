@@ -267,3 +267,32 @@ export function architectureDrift(
   for (let i = 0; i < zb.length; i++) shift += Math.abs(za[i] - zb[i]);
   return { shift, beforeVec: vb, afterVec: va };
 }
+
+// ── D6: architecture health report (aggregates the detectors) ─────────────────
+
+export interface MineReport {
+  moduleCount: number;
+  edgeCount: number;
+  isolated: string[];
+  cycle: string[] | null;
+  clusters: CouplingCluster[];
+}
+
+/**
+ * D6 architecture-mining report (pure, deterministic): build the namespaced adjacency from module
+ * sources and run every gap detector at once — orphan (isolated) nodes, one circular-import cycle,
+ * and latent coupling clusters. This is the runtime-facing aggregate the loop's flag-OFF archMine
+ * pass consumes; it invents nothing (all sub-results come from the tested detectors above).
+ */
+export function mineGraph(modules: { id: string; source: string; isMarkdown?: boolean }[]): MineReport {
+  const adj = buildAdjacency(modules);
+  let edgeCount = 0;
+  for (const row of adj.A) for (const v of row) edgeCount += v;
+  return {
+    moduleCount: adj.nodes.length,
+    edgeCount,
+    isolated: isolatedNodes(adj),
+    cycle: findCycle(adj),
+    clusters: couplingClusters(adj),
+  };
+}

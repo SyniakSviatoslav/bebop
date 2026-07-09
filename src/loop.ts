@@ -21,6 +21,7 @@ import { BOOT, say, TAGLINE, voiceFor } from './voice.ts';
 import { runBackend, type Backend } from './backend.ts';
 import { selectBackend, rotate } from './routing.ts';
 import { selectZenoh } from './integration/zenoh/real-adapter.ts';
+import { mineGraph, type MineReport } from './integration/analytics/arch-mine.ts';
 import { emptyLedger, record, type Ledger } from './token.ts';
 import type { Profile } from './profile.ts';
 import { preToolUse, type HookSpec } from './hooks.ts';
@@ -71,6 +72,11 @@ export interface BebopConfig {
   meshMode?: 'local' | 'real';
   // node ids to wire into the mesh when meshMode is set (defaults to a single 'bebop' node).
   meshIds?: string[];
+  // D6 architecture-mining pass (flag-OFF): when a module set is supplied, the loop runs the pure
+  // arch-mine detectors (orphans / import cycle / coupling clusters) over it and surfaces the health
+  // report in the transcript + returns it on LoopResult.mine. Deterministic, no LLM call. Off by
+  // default: no archMine ⇒ the pass never runs and mine is undefined.
+  archMine?: { id: string; source: string; isMarkdown?: boolean }[];
 }
 
 export interface LoopContext {
@@ -156,6 +162,9 @@ export interface LoopResult {
   // The full, visible Reason→Act→Observe→Reflect trace for every iteration. This is what promo
   // demos hide: here it is emitted to the transcript AND returned for audit/replay.
   reactTrace: ReactStep[];
+  // D6 architecture-mining health report (flag-OFF). Present only when cfg.archMine is supplied;
+  // undefined otherwise — the pass never runs by default.
+  mine?: MineReport;
 }
 
 const SYSTEM_PROMPT = `You are Bebop — a coding agent for the dowiz/DeliveryOS project.
@@ -307,6 +316,20 @@ export async function runLoop(cfg: BebopConfig): Promise<LoopResult> {
   else transcript.push(paint.amber(`  ${r.note}`));
   if (fieldDirective) transcript.push(paint.dim(`  field ∇·F/∇×F → ${fieldDirective}`));
 
+  // ── D6 ARCH-MINING PASS (flag-OFF) ── runs the pure arch-mine detectors over a supplied module set
+  // and surfaces the health report (orphans / import cycle / coupling clusters). Deterministic, no
+  // LLM. Off unless cfg.archMine is supplied; the result is returned on res.mine and printed once.
+  let mine: MineReport | undefined;
+  if (cfg.archMine && cfg.archMine.length > 0) {
+    mine = mineGraph(cfg.archMine);
+    const parts: string[] = [];
+    parts.push(`${mine.moduleCount} modules / ${mine.edgeCount} edges`);
+    parts.push(mine.isolated.length ? `orphans=${mine.isolated.length}` : 'no orphans');
+    parts.push(mine.cycle ? `CYCLE: ${mine.cycle.join(' → ')}` : 'no import cycle');
+    if (mine.clusters.length) parts.push(`coupling-clusters=${mine.clusters.length}`);
+    transcript.push(paint.dim(`  arch-mine: ${parts.join(' · ')}`));
+  }
+
   const messages: { role: string; content: string; name?: string }[] = [
     { role: 'system', content: SYSTEM_PROMPT },
   ];
@@ -412,7 +435,7 @@ export async function runLoop(cfg: BebopConfig): Promise<LoopResult> {
 
   transcript.push(paint.bold(paint.bone(`  ${TAGLINE}`)));
   const ok = routing.ok && denied === 0;
-  return { steps, mutations, denied, transcript, ok, log, ledger, iterations, reactTrace };
+  return { steps, mutations, denied, transcript, ok, log, ledger, iterations, reactTrace, mine };
 }
 
 // Subagent — Claude Code's .claude/agents/*.md analogue. Runs a SCOPED, read-only loop with a

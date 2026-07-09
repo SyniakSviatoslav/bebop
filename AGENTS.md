@@ -53,7 +53,7 @@ documentation, not gospel; verify non-trivial claims against code.
 ## Verify before claiming done
 - `npm run verify` — one-shot full gate: typecheck + tests + doc-claim honesty + falsifiable-proof.
 - `npm run boot` — guard-OS self-certification (must go RED to be trusted).
-- `npm test` — 416 falsifiable tests.
+- `npm test` — 421 falsifiable tests.
 - `npm run typecheck` — clean.
 - After any doc change: `bebop docs check`.
 - `node scripts/verify-doc-claims.mjs` — doc claims must match live code (pre-commit + CI).

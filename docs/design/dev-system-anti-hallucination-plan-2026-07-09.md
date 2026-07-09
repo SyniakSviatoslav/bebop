@@ -29,7 +29,7 @@ These are real EV but explicitly out of scope per the operator's directive
 | D3 | `selectZenoh` + `prove` into kernel dispatch (flag-OFF, RED+GREEN) | **DONE 2026-07-09** — wired into the dispatch SHELL (`runDispatch`, not the pure kernel — selection does IO); `cfg.meshMode` flag-OFF; fail-closed to LocalMesh twin; RED+GREEN+falsifiable in `src/loop.test.ts` | ✅ landed |
 | D4 | Dowiz ETA model (quantileLoss + huber, prediction intervals) | needs a real ETA seam in `apps/api` | when ETA module located + scoped |
 | D5 | RAG noise-cleaning (pcaFit/pcaProject before recall in `knowledge.ts`) | **DONE 2026-07-09** — `denoiseHits` (flag-OFF `denoise` RecallOpt) demotes off-manifold outlier hits by centroid-distance >1σ (centroid, not PCA-residual: at handful-of-hits sample size the outlier dominates PC1 and inverts the signal); DEMOTE-never-drop; RED+GREEN in `knowledge.test.ts` | ✅ landed |
-| D6 | Causal graph over module-import adjacency (counterfactual "points of failure") | R&D, needs real trace | separate causal-discovery arc |
+| D6 | Causal graph over module-import adjacency (counterfactual "points of failure") | **DONE 2026-07-09** — `mineGraph` (pure aggregate over existing buildAdjacency/isolatedNodes/findCycle/couplingClusters) + flag-OFF `archMine` loop pass surfaces cycle/orphans/clusters in transcript + `res.mine`; RED+GREEN in `loop.test.ts` + `arch-mine.test.ts`; counterfactual surface = the detected cycle/orphan set | ✅ landed |
 
 D1/D2 are the highest-EV of the deferred set (they close the loop on the two modules
 built today). They stay frozen until the dev-system below is solid — shipping a

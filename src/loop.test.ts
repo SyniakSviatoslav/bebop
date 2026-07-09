@@ -170,3 +170,46 @@ test('RED: without meshMode, NO mesh provenance is recorded (flag stays off)', a
   const res = await runLoop({ cwd: dir, taskClass: 'doer', llm: dispatchThenDone('summarize the README') });
   assert.ok(!hasMesh(res.log), 'mesh selection must stay off unless meshMode is set');
 });
+
+// ── D6: architecture-mining pass (flag-OFF) ──
+
+test('GREEN: archMine surfaces a real import-cycle + orphans over the supplied module set', async () => {
+  const dir = tmp();
+  const res = await runLoop({
+    cwd: dir,
+    taskClass: 'doer',
+    llm: dispatchThenDone('noop'),
+    archMine: [
+      { id: 'p:a', source: "import x from './b.ts';" },
+      { id: 'p:b', source: "import y from './c.ts';" },
+      { id: 'p:c', source: "import z from './a.ts';" }, // p:a→p:b→p:c→p:a : a real >=3-node cycle
+      { id: 'p:orphan', source: '// no imports' },
+    ],
+  });
+  assert.ok(res.mine, 'archMine must return a MineReport when supplied');
+  assert.ok(res.mine!.cycle && res.mine!.cycle.length >= 3, `must detect the cycle, got ${JSON.stringify(res.mine!.cycle)}`);
+  assert.ok(res.mine!.isolated.includes('p:orphan'), `must flag the orphan, got ${JSON.stringify(res.mine!.isolated)}`);
+  assert.ok(res.transcript.some((l) => l.includes('CYCLE') && l.includes('orphan')), 'transcript must surface the report');
+});
+
+test('RED: without archMine, the pass never runs and res.mine is undefined (flag stays off)', async () => {
+  const dir = tmp();
+  const res = await runLoop({ cwd: dir, taskClass: 'doer', llm: dispatchThenDone('noop') });
+  assert.equal(res.mine, undefined, 'arch-mine must stay off unless archMine is supplied');
+});
+
+test('RED: archMine with a clean acyclic module set reports no cycle and no orphans (falsifiable)', async () => {
+  const dir = tmp();
+  const res = await runLoop({
+    cwd: dir,
+    taskClass: 'doer',
+    llm: dispatchThenDone('noop'),
+    archMine: [
+      { id: 'p:a', source: "import x from './b.ts';" },
+      { id: 'p:b', source: "import y from './c.ts';" },
+      { id: 'p:c', source: '// leaf' },
+    ],
+  });
+  assert.equal(res.mine!.cycle, null, `acyclic graph must report no cycle, got ${JSON.stringify(res.mine!.cycle)}`);
+  assert.equal(res.mine!.isolated.length, 0, `connected graph must have no orphans, got ${JSON.stringify(res.mine!.isolated)}`);
+});
