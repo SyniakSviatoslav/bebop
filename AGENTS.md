@@ -71,3 +71,5 @@ documentation, not gospel; verify non-trivial claims against code.
   fixed immediately, not deferred — a guardrail that is red-but-ignored teaches the system red is fine.
 - **Defer loudly.** Deferred work states WHY and the re-open condition, so it is neither silently
   dropped nor silently claimed done.
+- **Don't over-claim wiring.** "verified" ≠ "wired into runtime". Flag-OFF / un-wired is explicit
+  (e.g. telemetry-ica-loop and the ICA→governor stage are proven but not live-promoted).

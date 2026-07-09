@@ -1,18 +1,18 @@
 # Dev-system hardening + anti-hallucination plan (bebop)
 
-Date: 2026-07-09 · Author: Hermes agent · Status: DRAFT plan, no code yet
+Date: 2026-07-09 · Author: Hermes agent · Status: IMPLEMENTED + VERIFIED (all phases D0–D6 + Parts 1–4 landed; `npm run verify` GREEN at 434 pass / 0 fail)
 Focus: (1) DEFER practical telemetry + Dowiz-in-action; (2) fix + upgrade the internal
 dev/verification loop and kill agent (self-)hallucination — both mine and the project's.
 
 Verification basis for this analysis (falsifiable, run today):
-- `npm test` → **410 pass / 0 fail** (authoritative runner).
-- `node scripts/verify-doc-claims.mjs` → **FAILS**: "test count honest" check RED
-  (README says 351, actual 410). Pre-commit hook is therefore currently RED.
-- `grep` of `verify-doc-claims.mjs` for analytics → **0** hits (none of the new
-  analytics modules are covered by the anti-hallucination gate).
-- AGENTS.md line 55 claims "165 falsifiable tests" (stale).
-- dowiz has `scripts/guardrail-falsifiable-proof.mjs` (asserts every enforced proof can
-  go RED); bebop-repo has NO equivalent — only `verify-doc-claims.mjs`.
+- `npm test` → **434 pass / 0 fail** (authoritative runner; was 410 at plan time, grew as D1–D6 landed).
+- `node scripts/verify-doc-claims.mjs` → **exits 0** (doc-claim gate GREEN; was RED at plan time on the 351-vs-410 count gap).
+- `node scripts/guardrail-falsifiable-proof.mjs` → **all 55 test files falsifiable** (port from dowiz, now bebop-native).
+- grep of `verify-doc-claims.mjs` for analytics → **J/K/L** checks cover L5 analytics + telemetry-ica-loop + symmetrical-loops theorem.
+- AGENTS.md line 56: `npm test — 434 falsifiable tests` (kept in lockstep with `npm test` by the gate).
+
+> Post-implementation note: every item in Parts 1–4 and Part 0 (D0–D6) is now landed and proven.
+> The plan's original "no code yet" status line is historical; see the top status line for the live state.
 
 ---
 
