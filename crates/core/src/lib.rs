@@ -335,7 +335,7 @@ pub mod retriever {
     // Mutex-wrapped so concurrent wasm calls (single-threaded, but sound) can't create UB.
     static RESULT: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
 
-    fn set_result(s: String) {
+    pub fn set_result(s: String) {
         *RESULT.lock().unwrap() = s;
     }
 
@@ -427,6 +427,130 @@ pub mod retriever {
     }
 }
 
+// ── math: deterministic linear algebra + Kalman (faithful, zero-dep port of matrix.ts) ─────────
+// These are the deterministic cores that the TS analytics layer uses (arch-mine SVD coupling,
+// governor PCA anomaly, kalman rate-smoothing). Porting them to Rust/WASM lets the sovereign node
+// run the SAME bit-faithful math with no JS runtime, no RNG/Date, no network. Kept dependency-free
+// (Jacobi EVD, same algorithm as matrix.ts) so the wasm stays tiny and the signatures match.
+pub mod math {
+    use serde_json::Value;
+
+    pub type Mat = Vec<Vec<f64>>;
+    pub type Vecf = Vec<f64>;
+
+    fn transpose(a: &Mat) -> Mat {
+        let n = a.len();
+        let m = a[0].len();
+        let mut t = vec![vec![0.0; n]; m];
+        for i in 0..n { for j in 0..m { t[j][i] = a[i][j]; } }
+        t
+    }
+    fn matmul(a: &Mat, b: &Mat) -> Mat {
+        let n = a.len(); let k = b.len(); let m = b[0].len();
+        let mut out = vec![vec![0.0; m]; n];
+        for i in 0..n { for p in 0..k { let aip = a[i][p]; if aip == 0.0 { continue; } for j in 0..m { out[i][j] += aip * b[p][j]; } } }
+        out
+    }
+
+    /// Jacobi eigenvalue decomposition of a symmetric matrix (faithful port of matrix.ts jacobiEVD).
+    fn jacobi_evd(a_in: &Mat, sweeps: usize) -> (Vecf, Mat) {
+        let n = a_in.len();
+        let mut a = a_in.clone();
+        let mut v = vec![vec![0.0; n]; n];
+        for i in 0..n { v[i][i] = 1.0; }
+        for _ in 0..sweeps {
+            let mut off = 0.0;
+            for p in 0..n { for q in (p+1)..n { off += a[p][q] * a[p][q]; } }
+            if off < 1e-18 { break; }
+            for p in 0..n { for q in (p+1)..n {
+                let apq = a[p][q];
+                if apq.abs() < 1e-300 { continue; }
+                let app = a[p][p]; let aqq = a[q][q];
+                let phi = (aqq - app) / (2.0 * apq);
+                let t = phi.signum() / (phi.abs() + (phi*phi + 1.0).sqrt());
+                let c = 1.0 / (t*t + 1.0).sqrt();
+                let s = t * c;
+                // rotate all rows/cols EXCEPT the p,q block itself
+                for i in 0..n {
+                    if i == p || i == q { continue; }
+                    let aip = a[i][p]; let aiq = a[i][q];
+                    a[i][p] = c*aip - s*aiq; a[i][q] = s*aip + c*aiq;
+                    let api = a[p][i]; let aqi = a[q][i];
+                    a[p][i] = c*api - s*aqi; a[q][i] = s*api + c*aqi;
+                    let vip = v[i][p]; let viq = v[i][q];
+                    v[i][p] = c*vip - s*viq; v[i][q] = s*vip + c*viq;
+                }
+                // atomic 2x2 block update (uses pre-rotation app/aqq/apq)
+                let app_new = c*c*app - 2.0*s*c*apq + s*s*aqq;
+                let aqq_new = s*s*app + 2.0*s*c*apq + c*c*aqq;
+                a[p][p] = app_new; a[q][q] = aqq_new; a[p][q] = 0.0; a[q][p] = 0.0;
+            } }
+        }
+        let values: Vecf = (0..n).map(|i| a[i][i]).collect();
+        (values, v)
+    }
+
+    /// Two-sided SVD via symmetric EVD of AᵀA / AAᵀ (faithful port of matrix.ts svd).
+    pub fn svd(a_in: &Mat) -> (Mat, Vecf, Mat) {
+        let m = a_in.len(); let n = a_in[0].len();
+        let (u, svals, v) = if m >= n {
+            let ata = matmul(&transpose(a_in), a_in);
+            let (ev, vecs) = jacobi_evd(&ata, 32);
+            let s: Vecf = ev.iter().map(|l| (l.max(0.0)).sqrt()).collect();
+            let av = matmul(a_in, &vecs);
+            let u = av.iter().map(|row| row.iter().enumerate().map(|(j, x)| if s[j] > 1e-12 { *x / s[j] } else { 0.0 }).collect()).collect();
+            (u, s, vecs)
+        } else {
+            let aat = matmul(a_in, &transpose(a_in));
+            let (ev, vecs) = jacobi_evd(&aat, 32);
+            let s: Vecf = ev.iter().map(|l| (l.max(0.0)).sqrt()).collect();
+            let atu = matmul(&transpose(a_in), &vecs);
+            let v = atu.iter().map(|row| row.iter().enumerate().map(|(j, x)| if s[j] > 1e-12 { *x / s[j] } else { 0.0 }).collect()).collect();
+            (vecs, s, v)
+        };
+        // sort descending by singular value
+        let mut order: Vec<usize> = (0..svals.len()).collect();
+        order.sort_by(|&i, &j| svals[j].partial_cmp(&svals[i]).unwrap_or(std::cmp::Ordering::Equal));
+        let s = order.iter().map(|&i| svals[i]).collect();
+        let u = u.iter().map(|row| order.iter().map(|&i| row[i]).collect()).collect();
+        let v = v.iter().map(|row| order.iter().map(|&i| row[i]).collect()).collect();
+        (u, s, v)
+    }
+
+    /// 1-D Kalman prediction/update (faithful port of kalman.ts kalman1dStep).
+    pub fn kalman_1d(z: f64, x: f64, p: f64, q: f64, r: f64) -> (f64, f64) {
+        let x_pred = x; let p_pred = p + q;
+        let k = if (p_pred + r) != 0.0 { p_pred / (p_pred + r) } else { 0.0 };
+        let x_upd = x_pred + k * (z - x_pred);
+        let p_upd = (1.0 - k) * p_pred;
+        (x_upd, p_upd)
+    }
+
+    // ── wasm C-ABI surface (hand-rolled, consistent with retriever) ──
+    // NOTE: the shared result buffer + bebop_result_ptr/len live in `retriever`; we reuse them so
+    // there is exactly ONE C-ABI result accessor (the host reads it once).
+    /// SVD of a JSON matrix `[[..],[..]]` → {"U":..,"S":..,"V":..}.
+    #[no_mangle]
+    pub extern "C" fn bebop_svd(args: *const u8, len: usize) {
+        let bytes = unsafe { std::slice::from_raw_parts(args, len) };
+        let v: Value = match serde_json::from_slice(bytes) { Ok(v) => v, Err(e) => { crate::retriever::set_result(format!("{{\"error\":\"{e}\"}}")); return; } };
+        let mat: Mat = v.as_array().map(|rows| rows.iter().map(|r| r.as_array().map(|c| c.iter().map(|x| x.as_f64().unwrap_or(0.0)).collect()).unwrap_or_default()).collect()).unwrap_or_default();
+        if mat.is_empty() { crate::retriever::set_result("{\"U\":[],\"S\":[],\"V\":[]}".into()); return; }
+        let (u, s, vv) = svd(&mat);
+        crate::retriever::set_result(serde_json::json!({ "U": u, "S": s, "V": vv }).to_string());
+    }
+
+    /// Kalman 1-D step. `args` = {"z","x","p","q","r"}.
+    #[no_mangle]
+    pub extern "C" fn bebop_kalman(args: *const u8, len: usize) {
+        let bytes = unsafe { std::slice::from_raw_parts(args, len) };
+        let v: Value = match serde_json::from_slice(bytes) { Ok(v) => v, Err(e) => { crate::retriever::set_result(format!("{{\"error\":\"{e}\"}}")); return; } };
+        let g = |k: &str| v[k].as_f64().unwrap_or(0.0);
+        let (x, p) = kalman_1d(g("z"), g("x"), g("p"), g("q"), g("r"));
+        crate::retriever::set_result(serde_json::json!({ "x": x, "p": p }).to_string());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -480,5 +604,29 @@ mod tests {
         let d = decide("migrations/x.sql", "edit", &[], &[], "");
         record("migrations/x.sql", "edit", &d);
         assert_eq!(log_len(), before + 1);
+    }
+
+    #[test]
+    fn math_svd_reconstructs_faithfully() {
+        // A = [[1,2],[3,4]] — SVD gives U·diag(S)·Vᵀ ≈ A
+        let a = vec![vec![1.0, 2.0], vec![3.0, 4.0]];
+        let (u, s, v) = math::svd(&a);
+        // reconstruct: U * S * V^T
+        let mut acc = 0.0;
+        for i in 0..2 { for j in 0..2 {
+            let mut r = 0.0;
+            for k in 0..2 { r += u[i][k] * s[k] * v[j][k]; }
+            acc += (r - a[i][j]).abs();
+        } }
+        assert!(acc < 1e-6, "SVD must reconstruct A (got residual {acc})");
+    }
+
+    #[test]
+    fn math_kalman_converges_to_measurement() {
+        // a run of identical measurements should pull the estimate toward z
+        let z = 10.0;
+        let mut x = 0.0; let mut p = 1.0;
+        for _ in 0..200 { let (nx, np) = math::kalman_1d(z, x, p, 1e-3, 0.5); x = nx; p = np; }
+        assert!((x - z).abs() < 0.05, "kalman should converge to z=10 (got {x})");
     }
 }

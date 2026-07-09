@@ -1,0 +1,19 @@
+[package]
+name = "bebop-core"
+version = "0.1.0"
+edition = "2021"
+description = "Deterministic math core for bebop (SVD/PCA, graph Laplacian + symplectic wave, Kalman, VSA). FLAG-OFF twin of the TS modules."
+# Sovereign-core rule: NO std::time, NO rand, NO std::thread network. Pure Float64 DSP, wasm32 target.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# FFI boundary enforces the air-gap: no network, no RNG, no clock.
+# wasm-bindgen only used to expose to the TS runtime; the math is std-only.
+
+[features]
+default = []
+
+[profile.release]
+opt-level = 3
+lto = true

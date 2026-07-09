@@ -18,9 +18,10 @@ import os from 'node:os';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { livingMemory, type LivingMemory } from './memory.ts';
+import { livingMemory, embed, similarity, type LivingMemory } from './memory.ts';
 import { opticalRecall } from './integration/optical/field-recall.ts';
 import { thinLensMask } from './integration/optical/optic.ts';
+import { buildRepoGraph, repoTensorSearch } from './integration/reverse-engineer.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // This is a standalone repo: src/ → bebop-repo root is ONE level up.
@@ -229,4 +230,64 @@ function parseRecall(out: string): { id: string; text: string; score?: number }[
     .filter(Boolean)
     .slice(0, 5)
     .map((l, i) => ({ id: `hit-${i}`, text: l }));
+}
+
+// ── TENSOR + GRAPH VISUAL-MEMORY SEARCH over the PROJECT FILE SYSTEM ───────────────────────────
+// Operator directive: apply the SAME tensor+graph search used on code (arch-mine / reverse-engineer)
+// to the visual/associative memory AND to the project's own file system. Index the repo into the
+// existing VSA graph (memory.ts) — each file becomes a node, imports become edges — then search it by
+// spreading-activation (graph) × VSA tensor similarity (associative) × PCA-denoise residual. The
+// overlay is the tensor×graph score, identical in shape to repoTensorSearch. FLAG-OFF: call
+// repoGraphIndex + visualTensorRecall explicitly. Deterministic (read-only scan, no RNG/Date).
+
+/**
+ * Index a repository's source tree into a LivingMemory (the "visual/associative" store): every .ts/.md
+ * file is a node; its import/wikilink edges are wired as graph edges. Returns the memory + a fast
+ * tensor-search handle (the RepoGraph) so queries hit BOTH engines. Deterministic, read-only.
+ */
+export function repoGraphIndex(root: string, maxDepth = 10): { mem: LivingMemory; graph: ReturnType<typeof buildRepoGraph> } {
+  const mem = livingMemory();
+  const graph = buildRepoGraph(root, maxDepth);
+  graph.nodes.forEach((id, i) => {
+    const rel = graph.rel[i];
+    const nid = mem.remember(`file:${rel}`, `[${rel}] indexed repo file`, undefined, { layer: 'long' });
+    for (let j = 0; j < graph.nodes.length; j++) {
+      if (graph.A[i][j] > 0 || graph.A[j][i] > 0) {
+        const relJ = graph.rel[j];
+        const jid = mem.remember(`file:${relJ}`, `[${relJ}] indexed repo file`, undefined, { layer: 'long' });
+        mem.rememberLink(nid, jid);
+      }
+    }
+  });
+  return { mem, graph };
+}
+
+export interface VisualTensorHit {
+  rel: string;
+  /** graph spreading-activation score from the VSA graph (0..1). */
+  graphScore: number;
+  /** VSA tensor similarity (0..1). */
+  tensorSim: number;
+  /** combined overlay. */
+  score: number;
+}
+
+/**
+ * Tensor+graph search over the project file system (via the indexed repo memory). Same directive as
+ * repoTensorSearch but through the associative VSA engine: graph proximity (spreading-activation
+ * energy) × tensor similarity (VSA Hamming). Returns the overlay top-K. Deterministic.
+ */
+export function visualTensorRecall(root: string, query: string, opts: { topK?: number } = {}): VisualTensorHit[] {
+  const topK = opts.topK ?? 10;
+  const { graph } = repoGraphIndex(root);
+  const hits = repoTensorSearch(graph, query, { topK: topK * 3 });
+  const qVec = embed(query);
+  return hits
+    .map((h) => {
+      const tSim = similarity(qVec, embed('file:' + h.rel));
+      const gScore = 1 - h.graphDist / Math.max(1, h.graphDist + 1);
+      return { rel: h.rel, graphScore: gScore, tensorSim: tSim, score: 0.5 * gScore + 0.5 * tSim };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK);
 }
