@@ -14,7 +14,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { pcaFit, pcaProject, pcaReconstruct } from './matrix.ts';
-import { buildNormalModel, pcaAnomalyScore, DEFAULT_PCA_ANOMALY } from './anomaly.ts';
+import { buildNormalModel, pcaAnomalyScore, calibrateLatentPrior, DEFAULT_PCA_ANOMALY } from './anomaly.ts';
 
 // Calibration window: a 4-dim telemetry vector that lives on a thin manifold
 // (3 correlated dims + a SMALL noise dim that the PCA should learn to drop).
@@ -98,4 +98,51 @@ test('RED: a SHARP excursion after slow drift DOES flag', () => {
 test('RED: non-finite input is rejected (poison guard)', () => {
   const model = buildNormalModel(normalWindow());
   assert.throws(() => pcaAnomalyScore(model, [1, 2, NaN, 4], DEFAULT_PCA_ANOMALY, 0, 20));
+});
+
+// ── N3: β-VAE latent-prior calibration (offline, flag-OFF) ──
+
+test('GREEN: calibrateLatentPrior on centered normal telemetry returns ok=true (β>0 is safe)', () => {
+  // manifold: dim0 is the signal; dims1-3 are tiny noise (PCA drops them via k=d-1).
+  const win = [];
+  for (let i = 0; i < 40; i++) win.push([i * 0.03, (i % 5) * 0.002, ((i % 7) - 3) * 0.001, ((i % 3) - 1) * 0.001]);
+  const model = buildNormalModel(win);
+  const cal = calibrateLatentPrior(model, win);
+  assert.equal(cal.ok, true, 'normal on-manifold data with ~0 latent mean must pass calibration');
+  assert.ok(cal.maxAbsMean < 0.25, 'latent mean within prior bounds');
+});
+
+test('RED: calibrateLatentPrior on a NON-zero-mean latent window returns ok=false (β would false-positive)', () => {
+  const win = [];
+  for (let i = 0; i < 40; i++) win.push([i * 0.03, (i % 5) * 0.002, ((i % 7) - 3) * 0.001, ((i % 3) - 1) * 0.001]);
+  const model = buildNormalModel(win);
+  // shift ONLY the signal axis by a constant → still on-manifold, but latent mean ≠ 0
+  const shifted = win.map((r) => [r[0] + 10, r[1], r[2], r[3]]);
+  const cal = calibrateLatentPrior(model, shifted);
+  assert.equal(cal.ok, false, 'off-prior latents must FAIL calibration (do not flip β>0)');
+  assert.ok(cal.maxAbsMean > 0.25, 'the bias is actually measured and reported');
+});
+
+test('RED+GREEN: β>0 false-positives an ON-MANIFOLD off-prior sample; calibration pre-empts it', () => {
+  // The doc's exact trap: Σzⱼ² flags a perfectly-NORMAL (on-manifold) sample whose latent
+  // mean is merely non-zero. Here the sample is on-manifold (β=0 does NOT flag) but its
+  // latent mean is 10 ⇒ with β=2 the latent-KL term blows past the EMA floor ⇒ false positive.
+  const win = [];
+  for (let i = 0; i < 40; i++) win.push([i * 0.03, (i % 5) * 0.002, ((i % 7) - 3) * 0.001, ((i % 3) - 1) * 0.001]);
+  const model = buildNormalModel(win);
+  const betaCfg = { ...DEFAULT_PCA_ANOMALY, beta: 2 };
+  // warm the EMA floor on centered data so it cannot mask a flat offset
+  let prev = 0, step = 0;
+  for (let k = 0; k < 12; k++) {
+    const st = pcaAnomalyScore(model, win[5], betaCfg, prev, step);
+    prev = st.threshold; step = st.step;
+  }
+  const offsetNormal = win.map((r) => [r[0] + 10, r[1], r[2], r[3]]);
+  const offB0 = pcaAnomalyScore(model, offsetNormal[5], { ...betaCfg, beta: 0 }, prev, step);
+  assert.equal(offB0.flag, false, 'GREEN base: the offset sample is on-manifold ⇒ β=0 does NOT flag');
+  const offB2 = pcaAnomalyScore(model, offsetNormal[5], betaCfg, prev, step);
+  assert.equal(offB2.flag, true, 'RED: β>0 false-positives a normal (off-prior) sample');
+  // the calibration harness catches this BEFORE you flip β>0
+  const cal = calibrateLatentPrior(model, offsetNormal);
+  assert.equal(cal.ok, false, 'calibration pre-empts the false-positive (ok=false ⇒ do not enable β)');
 });

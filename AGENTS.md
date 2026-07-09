@@ -27,6 +27,21 @@ Hermes, Codex, OpenCode, Aider, or Bebop itself) working in this repo.
 - **Deployment**: flag-OFF by default; shadow (log drift) before gate (block). Never a
   replacement for tests — a complement. Wire via `GovernorConfig.cycleConsistency`.
 
+## Universal rule — L5 Neuro-Symbolic Gate (advisor proposes, kernel decides)
+- **Definition**: any stochastic advisor (LLM / GNN / heuristic) is a *consultant* that PROPOSES an
+  authority + `predictedQuality`. The deterministic kernel (`Governor`) is the only actor that writes
+  `authority` to the actuator plane; a symbolic arbiter (`clamp`, factor-kill, resonance-cap,
+  safe-state floor, poison guard, cycle/PCA breach gate) sits between them and **mathematically
+  cannot emit an out-of-contract command**. See `docs/design/adr-003-neuro-symbolic-gate-2026-07-09.md`.
+- **Where it adds EV**: stops advisor hallucinations from reaching actuators; the empirical proof the
+  gate works is `bridgeMetrics().hallucinationRate` (N7) — how often the kernel overrode the advisor.
+- **Where it does NOT add EV**: making the advisor "smarter" via runtime RLHF/PPO. Sovereign-core
+  forbids SGD/RNG/Date at runtime (air-gapped) — training is offline-only. A GNN advisor (N6) slots in
+  behind `GnnAdvisor` with **zero kernel change**; its proposals are gated by `dualTrackGate` against
+  the deterministic Truth Layer graph so a hallucinated edge/route is rejected (`no-such-edge`).
+- **Implementation**: `src/governor.ts` (gate) + `src/integration/analytics/dual-track.ts` (seam).
+  Causal blast-radius surfaced via `pointsOfFailure` (N4).
+
 ## Repo layout
 - `bebop.ts` — CLI entry (subcommands: boot, run, agents, use, recall, route, map, diagrams,
   **docs**, mcp, self, init, and the `/`-slash commands).
@@ -53,7 +68,7 @@ documentation, not gospel; verify non-trivial claims against code.
 ## Verify before claiming done
 - `npm run verify` — one-shot full gate: typecheck + tests + doc-claim honesty + falsifiable-proof.
 - `npm run boot` — guard-OS self-certification (must go RED to be trusted).
-- `npm test` — 441 falsifiable tests.
+- `npm test` — 456 falsifiable tests.
 - `npm run typecheck` — clean.
 - After any doc change: `bebop docs check`.
 - `node scripts/verify-doc-claims.mjs` — doc claims must match live code (pre-commit + CI).

@@ -190,5 +190,51 @@ try {
       : 'governor missing safeState/watchdog fields or the safe-state test is absent');
 }
 
+// --- O. N3 β-VAE latent-prior calibration: calibrateLatentPrior exists + false-positive RED+GREEN ---
+{
+  const an = read('src/integration/analytics/anomaly.ts');
+  const t = read('src/integration/analytics/anomaly.test.ts');
+  const fn = /export function calibrateLatentPrior/.test(an) && /LatentPriorCalibration/.test(an);
+  const test = /calibrateLatentPrior/.test(t) && /false-positive|false positive/.test(t) && /off-prior/.test(t);
+  check('N3 latent-prior calibration: calibrateLatentPrior + false-positive RED+GREEN', fn && test,
+    fn && test ? 'calibration harness present; β>0 off-prior false-positive is proven RED'
+      : 'calibrateLatentPrior missing or its test lacks the false-positive RED case');
+}
+
+// --- P. N6 Dual-Track GNN seam: dualTrackGate exists + graph-gate RED+GREEN ---
+{
+  const dt = read('src/integration/analytics/dual-track.ts');
+  const t = read('src/integration/analytics/dual-track.test.ts');
+  const fn = /export function dualTrackGate/.test(dt) && /GnnAdvisor/.test(dt) && /TruthGraph/.test(dt);
+  const test = /honored/.test(t) && /no-such-edge/.test(t) && /hallucinat/.test(t);
+  check('N6 Dual-Track seam: dualTrackGate + graph-gate RED+GREEN', fn && test,
+    fn && test ? 'advisor proposals gated against the Truth Layer; hallucinated edge rejected RED'
+      : 'dualTrackGate missing or its test lacks the no-such-edge RED case');
+}
+
+// --- Q. N5 Neuro-Symbolic Gate ADR-003 exists + is cross-linked from AGENTS ---
+{
+  const adr = existsSync(path.join(ROOT, 'docs/design/adr-003-neuro-symbolic-gate-2026-07-09.md'));
+  const agents = read('AGENTS.md');
+  const linked = /adr-003-neuro-symbolic-gate/.test(agents);
+  const n7 = /bridgeMetrics|hallucinationRate/.test(read('src/governor.ts'));
+  check('N5 Neuro-Symbolic Gate ADR-003 present + cross-linked + N7 wired', adr && linked && n7,
+    adr && linked && n7 ? 'ADR-003 exists, linked from AGENTS, and the gate is observable via N7'
+      : 'ADR-003 missing, not linked, or N7 observability not wired into governor');
+}
+
+// --- R. N4 causal counterfactual: pointsOfFailure exists + RED+GREEN + dual-track consumes it ---
+{
+  const am = read('src/integration/analytics/arch-mine.ts');
+  const t = read('src/integration/analytics/arch-mine.test.ts');
+  const dt = read('src/integration/analytics/dual-track.test.ts');
+  const fn = /export function pointsOfFailure/.test(am) && /PointOfFailure/.test(am);
+  const test = /pointsOfFailure/.test(t) && /blast-radius/.test(t);
+  const wired = /pointsOfFailure/.test(dt);
+  check('N4 causal counterfactual: pointsOfFailure + RED+GREEN + consumed by N6', fn && test && wired,
+    fn && test && wired ? 'counterfactual surface proven + wired into the dual-track gate'
+      : 'pointsOfFailure missing, untested, or not consumed by the dual-track seam');
+}
+
 console.log(`\n  ${fails ? `✗ ${fails} doc-claim check(s) FAILED — fix before commit/release` : '✓ all doc claims backed by live proof'}`);
 process.exit(fails ? 1 : 0);

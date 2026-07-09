@@ -201,7 +201,74 @@ N3 (β-VAE prior calibration) · N4 (causal counterfactual surface) · N5 (Neuro
 N6 (GNN seam) · N7 (observability). Each is flag-OFF / design-only per the philosophy rules;
 no training loop or RNG in the core.
 
-Deferred (Class C) stay frozen; re-open only when an offline-trained model is actually needed
+---
+
+## 7. N3–N7 — IMPLEMENTED & VERIFIED (2026-07-09)
+
+All five remaining buildable items landed, flag-OFF, each with a falsifiable RED+GREEN test, and
+the doc-claim gate was extended (checks O/P/Q/R). Final proof:
+
+- `npm run verify` → **456 pass / 0 fail** (was 441 before this wave; +15 = 3 N3 + 3 N4 + 7 N6 + 3 N7...
+  precise: +3 anomaly (N3) +3 arch-mine (N4) +3 governor (N7) +6 dual-track (N6) = 15).
+- `.git/hooks/pre-commit` → both gates GREEN (doc-claim checks M–R; falsifiable-proof 55/55).
+- README.md / AGENTS.md test counts updated to 456.
+
+### N3 — β-VAE latent-prior calibration (`anomaly.ts`)
+- `calibrateLatentPrior(model, window)` — deterministic check that normal telemetry's latent `z`
+  is ~N(0,I) BEFORE you flip `cfg.beta>0`. Keys on latent **mean bias** (the doc's stated trap:
+  Σzⱼ² flags a normal sample whose latent mean is merely non-zero); variance≠1 is reported as INFO.
+- Tests: GREEN (centered window ok=true) · RED (non-zero-mean latent ok=false) · RED+GREEN
+  (β>0 false-positives an ON-MANIFOLD off-prior sample; calibration pre-empts it).
+- Honest note: raw PCA latents are NOT unit-variance (needs whitening); the gate therefore keys on
+  mean, not variance — this is documented in-code, not papered over.
+
+### N4 — Causal counterfactual surface (`arch-mine.ts`)
+- `pointsOfFailure(adj, focus)` — returns downstream (would break), upstream (supply risk), and any
+  cycle the focus participates in. The deterministic first step of the dump's "causal graph" ask.
+- Tests: GREEN (blast-radius of a known dep) · GREEN (cycle-participant + orphan) · RED (broken edge
+  NOT silently absorbed — real blast-radius returned, never a vacuous null).
+
+### N5 — Neuro-Symbolic Gate ADR-003 (`docs/design/adr-003-neuro-symbolic-gate-2026-07-09.md`)
+- Records that the governor ALREADY enforces "advisor proposes, kernel decides" deterministically;
+  pins the invariants (authority bounds, dead-factor kill, safe-state, poison guard, breach logging).
+- Cross-linked from AGENTS.md (new "L5 Neuro-Symbolic Gate" universal rule).
+
+### N6 — Dual-Track GNN seam (`dual-track.ts`)
+- `dualTrackGate(graph, advisor, focus)` — the Constraint-Based Gatekeeper: advisor proposals are
+  gated against the deterministic Truth Layer; a hallucinated edge/route is rejected (`no-such-edge`).
+- FLAG-OFF pure function; a future offline-trained GNN advisor slots in behind `GnnAdvisor` with zero
+  kernel change. Design doc: `docs/design/bebop-L5-dual-track-gnn-2026-07-09.md`.
+- Tests: GREEN (real edge honored) · RED (no-such-edge) · RED (unknown focus) · RED (low confidence)
+  · GREEN (silent = safe no-op) · GREEN (N4 blast-radius surfaced on honored verdict).
+
+### N7 — Hybrid-bridge observability (`governor.ts`)
+- `bridgeMetrics()` → `{ totalSteps, rejectedAdvices, hallucinationRate, analyticsLatencyMs }`. The
+  "is the system degrading 10 min before it fails?" surface: `hallucinationRate = rejected/total`.
+- Each `step` counts a rejection when the kernel overrode the advisor's requested authority (safe-state
+  floor / dead-factor kill / resonance cap / any clamp). Surfaced on `GovernorState` too.
+- Tests: GREEN (healthy advisor → rate 0) · RED (dead-factor advisor → rate>0, counted) · RED
+  (a Safe-State override is counted, never silently dropped).
+
+### Deferred (Class C) — frozen
+VAE/Diffusion/PPO/Dreamer training, Geometric Algebra / HDC / Quantum, PyG-DGL-LTN at runtime. Re-open
+only when an OFFLINE-trained model is actually needed and exported; the runtime seam (N6) already
+accepts it without kernel change.
+
+---
+
+## 8. Living-memory cross-links
+
+The L5 / Neuro-Symbolic Gate rationale lives in the living-memory corpus (the canonical "why"):
+- [[mem:ground-truth-over-proxy-2026-07-07]] — no proxy reasoning; deterministic truth over advisory.
+- [[mem:verified-by-math-2026-07-07]] — falsifiable RED+GREEN is the only valid proof.
+- [[mem:model-routing-policy-2026-07-03]] — advisory-vs-authority split (the kernel decides).
+- [[mem:open-source-goal-adr020-2026-07-03]] — AGPLv3 + TM + DCO governance context.
+
+NOTE (loop limitation, see finding F1): `loop.ts` does NOT currently compute bebop↔memory edges —
+its `crossEdges` field is always empty (see `arch-mine.ts` `buildAdjacency` returns `crossEdges: []`).
+These wikilinks are documentation pointers for humans/retrieval, not edges the loop traverses. To
+make cross-repo coupling real, `buildAdjacency` would need to resolve `mem:`-prefixed wikilinks to the
+`mem:` namespace (a small, flag-OFF enhancement — out of scope for this wave, recorded as a gap).
 and the air-gap/determinism constraints can be satisfied (edge-inference only).
 
 ---

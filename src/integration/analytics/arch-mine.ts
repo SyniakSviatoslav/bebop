@@ -284,6 +284,36 @@ export interface MineReport {
  * and latent coupling clusters. This is the runtime-facing aggregate the loop's flag-OFF archMine
  * pass consumes; it invents nothing (all sub-results come from the tested detectors above).
  */
+// ── N4 (2026-07-09): causal counterfactual surface (dump's Causal-Graph ask, cheap-first) ──
+// The dump wants a causal graph: "if module X changes, what breaks?" This is the FIRST
+// deterministic step (arch-mine already mines the dependency graph). pointsOfFailure takes
+// a focus module and returns the counterfactual blast-radius: the modules that DEPEND ON it
+// (downstream — would break if X's contract changes), modules it DEPENDS ON (upstream — X's
+// own risk surface), and any circular import it participates in. Deterministic, no RNG/Date.
+
+export interface PointOfFailure {
+  focus: string;
+  downstream: string[]; // modules that import `focus` (would break if focus changes)
+  upstream: string[]; // modules `focus` imports (focus's own supply risk)
+  inCycle: string[] | null; // the cycle `focus` participates in, if any
+  isOrphan: boolean; // no edges at all (safe to change, nothing depends on it)
+}
+
+export function pointsOfFailure(adj: { nodes: string[]; A: Mat }, focus: string): PointOfFailure | null {
+  const { nodes, A } = adj;
+  const i = nodes.indexOf(focus);
+  if (i < 0) return null;
+  const downstream: string[] = [];
+  const upstream: string[] = [];
+  for (let j = 0; j < nodes.length; j++) {
+    if (A[j][i] > 0) downstream.push(nodes[j]); // j imports focus
+    if (A[i][j] > 0) upstream.push(nodes[j]); // focus imports j
+  }
+  const cyc = findCycle(adj);
+  const inCycle = cyc && cyc.includes(focus) ? cyc : null;
+  return { focus, downstream, upstream, inCycle, isOrphan: downstream.length === 0 && upstream.length === 0 };
+}
+
 export function mineGraph(modules: { id: string; source: string; isMarkdown?: boolean }[]): MineReport {
   const adj = buildAdjacency(modules);
   let edgeCount = 0;

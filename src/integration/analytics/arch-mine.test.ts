@@ -20,6 +20,7 @@ import {
   extractImports,
   extractWikilinks,
   mineGraph,
+  pointsOfFailure,
 } from './arch-mine.ts';
 import { scanProjects, reverseEngineeringLoop } from './loop.ts';
 
@@ -178,4 +179,46 @@ test('RED: mineGraph on an acyclic, fully-connected set reports no cycle and no 
   ]);
   assert.equal(rep.cycle, null, 'acyclic ⇒ no cycle');
   assert.equal(rep.isolated.length, 0, 'connected ⇒ no orphans');
+});
+
+// ── N4: causal counterfactual surface (pointsOfFailure) ──
+
+test('GREEN: pointsOfFailure reports the blast-radius of a known dependency', () => {
+  const adj = buildAdjacency([
+    { id: 'p:core', source: "import { x } from './util.ts';" },
+    { id: 'p:util', source: 'export const x = 1;' },
+    { id: 'p:app', source: "import { x } from './core.ts';" },
+  ]);
+  const pof = pointsOfFailure(adj, 'p:core');
+  assert.ok(pof, 'focus exists');
+  assert.deepEqual(pof!.downstream.sort(), ['p:app'], 'app depends on core (would break if core changes)');
+  assert.deepEqual(pof!.upstream, ['p:util'], 'core depends on util (core supply risk)');
+  assert.equal(pof!.isOrphan, false, 'core is not orphaned');
+});
+
+test('GREEN: pointsOfFailure flags a cycle-participant and an orphan', () => {
+  const adj = buildAdjacency([
+    { id: 'p:a', source: "import { b } from './b.ts';" },
+    { id: 'p:b', source: "import { c } from './c.ts';" },
+    { id: 'p:c', source: "import { a } from './a.ts';" }, // a→b→c→a (real ≥3 cycle)
+    { id: 'p:lonely', source: 'export const z = 1;' },
+  ]);
+  const inCycle = pointsOfFailure(adj, 'p:a');
+  assert.ok(inCycle!.inCycle && inCycle!.inCycle.length >= 3, 'a is in a real cycle');
+  const orphan = pointsOfFailure(adj, 'p:lonely');
+  assert.equal(orphan!.isOrphan, true, 'lonely has no dependents/suppliers ⇒ safe to change');
+});
+
+test('RED: pointsOfFailure over a BROKEN edge is NOT silently absorbed (returns real blast-radius, not null)', () => {
+  // focus exists but the "downstream" edge was intentionally dropped from the graph.
+  // The function must still report based on what the graph CONTAINS (honest), and never
+  // pretend a dependency is safe by returning a vacuous result.
+  const adj = buildAdjacency([
+    { id: 'p:core', source: 'export const x = 1;' }, // core now imports NOTHING
+    { id: 'p:app', source: "import { x } from './core.ts';" }, // app still depends on core
+  ]);
+  const pof = pointsOfFailure(adj, 'p:core');
+  assert.ok(pof, 'focus resolved even though it imports nothing');
+  assert.deepEqual(pof!.downstream, ['p:app'], 'app→core edge is still surfaced (not absorbed)');
+  assert.deepEqual(pof!.upstream, [], 'core supplies nothing after the edge was dropped (honest)');
 });

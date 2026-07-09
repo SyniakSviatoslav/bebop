@@ -43,6 +43,12 @@ export interface GovernorState {
   safeState?: boolean;
   /** N2: ms since the last advisory (heartbeat age). 0 until the first step with a clock. */
   agentSilentMs?: number;
+  /** N7 hybrid-bridge observability (flag-OFF): running count of advisor advices the
+   *  kernel REJECTED (overrode the requested authority). Surfaced for the "is the
+   *  system degrading 10 min before it fails?" metric. */
+  rejectedAdvices?: number;
+  /** N7: hallucination rate = rejectedAdvices / totalSteps ∈ [0,1]. */
+  hallucinationRate?: number;
 }
 
 // ── pure math primitives ──────────────────────────────────────────────────────
@@ -231,6 +237,12 @@ export class Governor {
   // N2 liveness contract (flag-OFF): Safe State flag + last advisory clock
   safeState = false;
   private lastAdvisoryMs: number | null = null;
+  // N7 hybrid-bridge observability (flag-OFF): counts a rejected advisor advice
+  // and smooths analytics latency. Inert unless you read bridgeMetrics() — no
+  // behavior change to the governor's control surface.
+  private totalSteps = 0;
+  private rejectedAdvices = 0;
+  private analyticsLatencyEma = 0;
 
   constructor(cfg: GovernorConfig) {
     this.cfg = cfg;
@@ -342,6 +354,7 @@ export class Governor {
     // caller BOTH (a) supplied a `features` vector AND (b) configured `pcaAnomaly`.
     // The adaptive EMA threshold learns out slow drift (battery/weather) and flags
     // only SHARP excursions — the deterministic twin of the prompt's ELBO anomaly.
+    const tAnalytics0 = performance.now();
     if (this.cfg.pcaAnomaly && s.features && s.features.length === this.cfg.pcaAnomaly.model.mean.length) {
       const prev = this.pcaState ? this.pcaState.threshold : 0;
       const prevStep = this.pcaState ? this.pcaState.step : 0;
@@ -374,8 +387,34 @@ export class Governor {
       const thr = this.cfg.icaFaultError ?? 1.0; // gate on real symmetry-gap, not the always-present candidate
       if (r.breakAt >= 0 && r.error > thr) this.subsystemFault = r.breakAt;
     }
+    // N7: smooth the analytics pass latency (EMA). Honest telemetry, never gated on.
+    const analyticsMs = performance.now() - tAnalytics0;
+    this.analyticsLatencyEma = 0.1 * analyticsMs + 0.9 * this.analyticsLatencyEma;
 
-    return (this.last = { authority: clamp(authority, c.uMin, c.uMax), pidU: u, icir: icirV, factorStatus: status, resonanceRisky: this.resonanceRisky, anomaly: this.anomaly, thermoFloorHit: this.thermoFloorHit, error, pcaAnomaly: this.pcaAnomaly, cycleBroken: this.cycleBroken, subsystemFault: this.subsystemFault, safeState, agentSilentMs: watchdogArmed ? agentSilentMs : 0 });
+    // N7 hybrid-bridge observability: a "rejected advice" = the kernel overrode the
+    // advisor's requested authority `u` (safe-state floor, dead-factor kill, resonance cap,
+    // or any clamp). This is the honest "hallucination rate" the dump's architect test asks for.
+    this.totalSteps += 1;
+    const rejected = authority < u - 1e-12; // advisor asked for MORE than the kernel granted
+    if (rejected) this.rejectedAdvices += 1;
+    const hallucinationRate = this.totalSteps > 0 ? this.rejectedAdvices / this.totalSteps : 0;
+
+    return (this.last = { authority: clamp(authority, c.uMin, c.uMax), pidU: u, icir: icirV, factorStatus: status, resonanceRisky: this.resonanceRisky, anomaly: this.anomaly, thermoFloorHit: this.thermoFloorHit, error, pcaAnomaly: this.pcaAnomaly, cycleBroken: this.cycleBroken, subsystemFault: this.subsystemFault, safeState, agentSilentMs: watchdogArmed ? agentSilentMs : 0, rejectedAdvices: this.rejectedAdvices, hallucinationRate });
+  }
+
+  /**
+   * N7 hybrid-bridge observability (flag-OFF): the "is the system degrading 10 min
+   * before it fails?" surface. Returns the running reject/hallucination counters and
+   * the smoothed analytics latency. Pure read — no effect on control. When no step()
+   * has run yet the rate is 0 (no division by zero).
+   */
+  bridgeMetrics(): { totalSteps: number; rejectedAdvices: number; hallucinationRate: number; analyticsLatencyMs: number } {
+    return {
+      totalSteps: this.totalSteps,
+      rejectedAdvices: this.rejectedAdvices,
+      hallucinationRate: this.totalSteps > 0 ? this.rejectedAdvices / this.totalSteps : 0,
+      analyticsLatencyMs: this.analyticsLatencyEma,
+    };
   }
 }
 

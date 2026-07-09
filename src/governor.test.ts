@@ -355,3 +355,45 @@ test('GREEN: governor WITHOUT watchdogMs config never engages Safe State (flag-O
   const st = g.step(sample({ predictedQuality: 0.9, actualQuality: 0.88 }), 999999);
   assert.notEqual(st.safeState, true, 'Safe State must stay OFF unless watchdogMs is configured');
 });
+
+// ── N7: hybrid-bridge observability (hallucination-rate / reject counter) ──
+
+test('GREEN: a healthy advisor is NEVER rejected — hallucinationRate stays 0', () => {
+  const g = mk();
+  for (let k = 0; k < 20; k++) {
+    // advisor self-predicts well and the plant tracks setpoint ⇒ factor healthy, no clamp
+    g.step(sample({ predictedQuality: 0.9, actualQuality: 0.89 }));
+  }
+  const m = g.bridgeMetrics();
+  assert.equal(m.rejectedAdvices, 0, 'no advices overrode when the advisor is healthy');
+  assert.equal(m.hallucinationRate, 0, 'hallucination rate is exactly 0 for a trustworthy advisor');
+  assert.equal(m.totalSteps, 20, 'step count is honest');
+});
+
+test('RED: a dead-factor advisor IS counted as rejected — hallucinationRate > 0 (honest counter)', () => {
+  const g = mk();
+  // Make the advisor's self-prediction ANTI-correlated with reality (pred high when act low,
+  // and vice-versa). Spearman(pred,act) ≈ −1 ⇒ ICIR negative ⇒ factor 'dead' ⇒ kernel floors
+  // authority (rejects the advisor). The bridge must COUNT every such override.
+  for (let k = 0; k < 20; k++) {
+    const hi = k % 2 === 0;
+    g.step(sample({ predictedQuality: hi ? 0.95 : 0.1, actualQuality: hi ? 0.1 : 0.95 }));
+  }
+  const m = g.bridgeMetrics();
+  assert.ok(m.rejectedAdvices > 0, 'a dead-factor advisor must be counted as rejected');
+  assert.ok(m.hallucinationRate > 0 && m.hallucinationRate <= 1, `rate in (0,1], got ${m.hallucinationRate}`);
+  assert.equal(m.totalSteps, 20, 'counter denominator matches the steps taken');
+  // surfaced on the state too
+  assert.equal(g.state.rejectedAdvices, m.rejectedAdvices, 'counter also surfaced on GovernorState');
+});
+
+test('RED: a rejected advice is NEVER silently dropped — bridgeMetrics reflects every override', () => {
+  const g = mk();
+  // force a Safe-State rejection once (watchdog), then verify the counter moved by exactly 1
+  const g2 = new Governor({ ...baseCfg, watchdogMs: 1000 });
+  g2.step(sample({ predictedQuality: 0.9, actualQuality: 0.88 }), 0); // arm
+  const before = g2.bridgeMetrics().rejectedAdvices;
+  g2.step(sample({ predictedQuality: 0.9, actualQuality: 0.88 }), 5000); // silence ⇒ reject
+  const after = g2.bridgeMetrics().rejectedAdvices;
+  assert.equal(after, before + 1, 'a Safe-State override is counted (not absorbed)');
+});
