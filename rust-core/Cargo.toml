@@ -1,19 +1,16 @@
 [package]
 name = "bebop-core"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "Deterministic math core for bebop (SVD/PCA, graph Laplacian + symplectic wave, Kalman, VSA). FLAG-OFF twin of the TS modules."
-# Sovereign-core rule: NO std::time, NO rand, NO std::thread network. Pure Float64 DSP, wasm32 target.
+description = "Deterministic graph-PDE field core (Rust->WASM). Chebyshev spectral propagator + active-set pruning. No RNG, no Date, no std deps."
+
 [lib]
-crate-type = ["cdylib", "rlib"]
-
-[dependencies]
-# FFI boundary enforces the air-gap: no network, no RNG, no clock.
-# wasm-bindgen only used to expose to the TS runtime; the math is std-only.
-
-[features]
-default = []
+crate-type = ["cdylib"]   # emits a .wasm we instantiate from Node (no wasm-bindgen dep -> air-gapped build)
 
 [profile.release]
 opt-level = 3
 lto = true
+codegen-units = 1
+
+# NOTE: intentionally NO dependencies. The crate is pure `core`/`alloc` so it builds offline
+# (sovereign-core constraint: air-gapped, no network at build). ABI is raw C-ABI over linear memory.

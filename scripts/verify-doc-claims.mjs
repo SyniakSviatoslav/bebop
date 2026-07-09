@@ -411,14 +411,21 @@ try {
       : 'theory doc missing the PROBE/CORRECTION/velocity-Verlet/Hamiltonian/Rust sections');
 }
 
-// --- AI. Rust core stub: deterministic math twin present (FLAG-OFF) ---
+// --- AK. Rust→WASM field core: real wasm32 core + 5 falsifiable tests (replaces JS field-sim) ---
 {
   const cargo = read('rust-core/Cargo.toml');
   const lib = read('rust-core/src/lib.rs');
-  const ok = /bebop-core/.test(cargo) && /wave_step/.test(lib) && /laplacian/.test(lib) && /FLAG-OFF/.test(lib);
-  check('Rust core stub: deterministic math twin (wave/diffuse Laplacian) present, flag-OFF', ok,
-    ok ? 'rust-core/ sketches the SVD/PCA/Kalman/VSA twin; FLAG-OFF until RED+GREEN tests ported'
-      : 'rust-core/ missing Cargo.toml or the laplacian/wave_step signatures');
+  const wrap = read('src/integration/field-rust.ts');
+  const t = read('src/integration/field-rust.test.ts');
+  const d = read('docs/design/bebop-rust-field-core-2026-07-09.md');
+  const exports = /field_build/.test(lib) && /field_spectral/.test(lib) && /field_active/.test(lib) && /vsa_similarity/.test(lib);
+  const wasm = /wasm32-unknown-unknown/.test(cargo) || /\[lib\]/.test(cargo);
+  const tests = /rust spectral propagator converges/.test(t) && /rust propagator is ONE call/.test(t) && /rust active-set pruning/.test(t) && /rust VSA similarity/.test(t);
+  const doc = /Chebyshev/.test(d) && /active-set/.test(d) && /AK\.1/.test(d);
+  const ok = exports && wasm && tests && doc;
+  check('Rust→WASM field core: wasm32 build + 5 falsifiable tests (spectral + active-set + VSA)', ok,
+    ok ? 'rust-core/ compiles to wasm32 (air-gapped, no RNG/Date); spectral propagator + active-set pruning + VSA proved vs JS K-iteration'
+    : 'rust-core/ missing field_spectral/field_active/vsa_similarity exports, or field-rust tests/doc gaps');
 }
 
 // --- AJ. Optical search + real-time change prediction (field-optical.ts + predictImpact) ---
