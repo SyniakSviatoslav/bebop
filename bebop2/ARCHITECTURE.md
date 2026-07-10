@@ -140,3 +140,67 @@ cost. Agents must NOT "optimize" PQ crypto into insecurity — the KAT gate forb
   PANICS on any `alloc::alloc` / vtable / HashMap call → proves the contract.
 - reloop v2 asserts: wasm imports NOTHING (no I/O latency) + bounded `.text` size (icache/decode proxy).
 
+## Better math per function (operator directive 2026-07-10)
+
+> "On ANY function or method — research and analyze whether a mathematically superior solution
+> is possible." This is the META-pillar: it governs the other three (vectors→waves,
+> middleware→direct, latency→zero-overhead). For every primitive, ask: *is this the
+> mathematically optimal formulation for its physics, or a convenient one?* If a
+> Krylov/Chebyshev/Lanczos/square-root/spectral-native formulation does the same
+> physics in fewer ops or with better numerics — USE IT.
+
+The three categories this lives in, and the upgrade questions each module MUST answer
+before it is declared done:
+
+### Cat 1 — Post-quantum security (pq_kem / pq_dsa / aead / kdf / sign)
+- The SCHEME (ML-KEM-768 / ML-DSA-65) is a FIPS STANDARD. "Better math" ≠
+  re-deriving the algorithm (that leaves the audited/interop envelope). The standard
+  IS near-optimal for NTT/Module-LWE. **Optimize ONLY within what FIPS permits:**
+  - **Small sampler** (FIPS 203 §"small" centered-binomial): one rejection round,
+    fewer RNG bytes, constant-time — SUPERIOR to naive two-uniform-product. TAKE IT.
+  - **Fused hash-to-field**: one SHAKE tree call, not per-coefficient hashing.
+  - **NTT**: for Kyber n=256, NTT is near-optimal; do NOT "upgrade" to
+    Karatsuba/Toom (they win only at small degrees). Document WHY NTT is the optimum.
+- Verdict: scheme = optimum (provable lattice reduction); apply the *approved* micro-optimizations.
+
+### Cat 2 — Optimization & latency (field / fft / chebyshev / kalman / lyapunov)
+- **`fft.rs` is often the WRONG math.** For graph spectra you don't FFT a dense
+  matrix — you use **Lanczos / Arnoldi (Krylov subspace)**: O(n·k), NEVER forms
+  the dense Laplacian. This IS the tensors→waves directive made concrete.
+- **`chebyshev.rs` (spectral propagator) = already optimal** polynomial approx for
+  `exp(-λt)`. Upgrade further: **Chebyshev-accelerated Lanczos** — propagate in
+  the Krylov basis, fewer modes, same accuracy.
+- **`field.rs` heat kernel `exp(-L t)·x`**: the OPTIMAL form is the
+  **matrix-function-vector product via Lanczos+Chebyshev** — approximate the ACTION
+  without diagonalizing. Never form λ explicitly if you can avoid it.
+- **`kalman.rs`**: upgrade dense-P / spectral-P to **square-root covariance filtering
+  (Potter/Carlson)** — numerically stable, P cannot lose PSD (a real failure mode).
+  Information form when observations are dense.
+
+### Cat 3 — Tensors & waves (vsa / algebra / field)
+- **`vsa.rs` bind = circular convolution = pointwise Fourier multiply.** The SUPERIOR
+  math: **store hypervectors natively in the Fourier/spectral basis** — bind = multiply,
+  no forward FFT per op. Collapses the transform overhead entirely (tying Cat 3 → Cat 2).
+- **`algebra.rs` sinc**: `sin(πx)/(πx)` has the x=0 division issue — guard the
+  limit, OR use the **Lanczos sigma (σ) factor** for anti-aliasing (Gibbs control).
+- **Deepest Cat-3 upgrade**: a vector = projection on a basis; the OPTIMAL basis for a
+  *dynamic* system is its **Karhunen-Loève (PCA) = eigenbasis of its covariance** —
+  which IS the spectral decomposition. "Better math for vectors" = **project onto the
+  system's OWN eigenbasis (KLE), not a fixed Fourier basis.** Unifies Cat 3 with Cat 2:
+  the waves ARE the optimal basis.
+
+### The meta-rule (enforced at integration, not just build)
+> Standard (FIPS) = optimum for INTEROP/AUDIT, not necessarily for MATH. Optimize
+> within what the standard permits. For non-standard math (spectral kernels, VSA,
+> Kalman), the Krylov/Chebyshev/square-root/spectral-native form is the bar — a
+> module that uses naive dense/Taylor/per-op-FFT MUST justify WHY, or be rewritten.
+
+### Falsifiability (integration gate — applied when agents return)
+- Each module's brief report MUST name the mathematical formulation chosen AND the
+  rejected alternative + WHY (e.g. "Lanczos over FFT: O(n·k) vs O(n²log n);
+  dense Laplacian never formed"). A module with no such justification = RED, send back.
+- Numerical: Lanczos `exp(-L t)·x` == dense-eigen decomposition to 1e-9 on a
+  reference graph (RED+GREEN: perturb the iteration count → divergence detected).
+- Square-root Kalman P stays symmetric-PSD where naive P goes non-PSD (test asserts
+  eigenvalues ≥ 0 across a stress trajectory).
+
