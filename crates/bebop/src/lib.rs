@@ -28,6 +28,7 @@ pub mod governor;
 pub mod knowledge;
 pub mod launch;
 pub mod ledger; // deterministic double-entry money/resource boundary (TigerBeetle invariant)
+pub mod mapping; // MAPPING: live edge-weight refresh (congestion → W_uv) over reconnect
 pub mod mathx; // §2 numerics: divergence, transfer-func step response, Lagrange interp, limit-cycle detect
 pub mod mcp; // minimal MCP server over stdio (JSON-RPC)
 pub mod memory;
