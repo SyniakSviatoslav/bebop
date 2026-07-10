@@ -11,7 +11,8 @@
 // property must hold (no clock/RNG/socket reachable). Native + test builds use std so
 // tests can allocate + panic. The empty-import gate (reloop v2) enforces no_std on wasm.
 #![cfg_attr(target_arch = "wasm32", no_std)]
-#[cfg(target_arch = "wasm32")]
+// `alloc` is in scope for both std and no_std builds (brought in explicitly so hash.rs's
+// `alloc::vec::Vec` / `alloc::string::String` helpers resolve under native doctest builds too).
 extern crate alloc;
 
 pub mod field;      // graph-PDE spectral kernel (Laplacian eigenmodes) — replaces dense tensors
@@ -31,6 +32,10 @@ pub mod kdf;         // Argon2id
 pub mod hash;        // SHA-512 + SHA3
 pub mod sign;        // Ed25519 (hybrid classical fallback)
 pub mod rng;         // CSPRNG from hardware entropy (in-tree, no getrandom dep)
+
+// KAT vectors (committed; parent-embedded short ones in vectors.rs, agent-fetched long
+// ones in vectors_long.rs). Read by #[cfg(test)] in each crypto module.
+pub mod kat;
 
 // ── C8 FIX (carried from fable audit) ───────────────────────────────────────────────
 /// Correct range reduction for exp: `r = x - round(x/ln2)*ln2`, symmetric for ALL signs.
@@ -61,12 +66,15 @@ pub fn fexp(x: f64) -> f64 {
         t += term;
         n += 1;
     }
-    // 2^k * e^r (exact integer shift for the 2^k factor; saturate at extremes, never panic).
+    // 2^k * e^r. A raw `1u64 << k` panics on overflow for k >= 64 (u64 shift
+    // range), which the mass-conservation tests hit with large diffusion coeffs.
+    // Use the exact integer power of two via f64 (saturates to INF at extreme k,
+    // never panics; deterministic).
     let two_k = if k >= 0 {
-        if k >= 1024 { f64::INFINITY } else { (1u64 << (k as u32)) as f64 }
+        if k >= 1024 { f64::INFINITY } else { 2.0f64.powi(k) }
     } else {
         let ak = (-k) as i32;
-        if ak >= 1024 { 0.0 } else { 1.0 / ((1u64 << (ak as u32)) as f64) }
+        if ak >= 1024 { 0.0 } else { 2.0f64.powi(ak).recip() }
     };
     two_k * t
 }
