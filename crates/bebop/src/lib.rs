@@ -18,6 +18,7 @@ pub mod copilot;
 pub mod customize; // the three customization axes (looks / narration / patrons)
 pub mod detect; // N1–N8 operational-graph detector battery (deterministic, RED+GREEN)
 pub mod doc_claims;
+pub mod enrich; // dossier-derived: trace replay, Pareto, opt-algos, SEAL analog, design-thinking
 pub mod execution; // prompt-cache ledger, model cascade, batch splitter (verified-speed primitives)
 pub mod field; // re-exports the rust-core field contract (native target)
 pub mod governor;
