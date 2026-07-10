@@ -582,7 +582,7 @@ pub(crate) fn plan_wave_gate_with(
             if first < nodes.len() {
                 let solids: Vec<Platonic> = vec![Platonic::Tetrahedron; nodes.len()];
                 let (affected, _e) =
-                    field_physics::change_impact(nodes, &solids, edges, first, wave_amp, 40, 1e-3);
+                    field_physics::change_impact(nodes, &solids, edges, first, wave_amp, 40, 1e-6);
                 if affected.iter().any(|&i| nodes[i].red_line) {
                     return WaveVerdict::Unhealthy;
                 }

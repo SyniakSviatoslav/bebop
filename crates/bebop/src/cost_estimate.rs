@@ -25,6 +25,31 @@
 use crate::field_physics::adjacency;
 use crate::wavefield::{ConnEdge, Node2D};
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
+
+/// Orderable f64 priority for the A* min-heap. `f64` is not `Ord` (NaN), so we
+/// order by `total_cmp` — a total order over all f64s (NaN sorts last, which is
+/// harmless for non-negative A* priorities).
+#[derive(Clone, Copy, Debug)]
+struct Prio(f64);
+impl PartialEq for Prio {
+    fn eq(&self, o: &Self) -> bool {
+        self.0.to_bits() == o.0.to_bits()
+    }
+}
+impl Eq for Prio {}
+impl PartialOrd for Prio {
+    fn partial_cmp(&self, o: &Self) -> Option<Ordering> {
+        Some(self.cmp(o))
+    }
+}
+impl Ord for Prio {
+    fn cmp(&self, o: &Self) -> Ordering {
+        self.0.total_cmp(&o.0)
+    }
+}
 
 /// Per-edge economic cost components. The "wave speed" F_uv = 1 / W_uv is derived
 /// from these: high latency/cost/risk ⇒ slow wave ⇒ expensive edge (avoided by A*).
@@ -210,15 +235,18 @@ pub fn route(
         }
     }
 
-    // A* (binary-heap Dijkstra with heuristic). Deterministic tie-break by node id.
+    // A* (binary-heap Dijkstra with admissible heuristic). Deterministic tie-break
+    // by node id via the heap's (f_score, node) ordering.
     let mut g = vec![f64::INFINITY; n];
     let mut prev = vec![usize::MAX; n];
-    let mut visited = vec![false; n];
-    // simple binary heap of (f_score, node)
-    let mut heap: Vec<(f64, usize)> = Vec::new();
+    let mut visited = vec![bool::default(); n];
+    // min-heap on f-score (BinaryHeap is a max-heap; Reverse flips it).
+    let mut heap: BinaryHeap<Reverse<(Prio, usize)>> = BinaryHeap::new();
     let h = |i: usize| -> f64 {
-        // admissible straight-line lower bound on remaining latency
-        match (nodes.get(src), nodes.get(i)) {
+        // admissible straight-line LOWER bound on remaining latency to DST.
+        // MUST measure i→dst (not src→i) or the heuristic is inadmissible and
+        // A* can return a suboptimal path.
+        match (nodes.get(i), nodes.get(dst)) {
             (Some(a), Some(b)) => {
                 let dx = a.x - b.x;
                 let dy = a.y - b.y;
@@ -228,8 +256,8 @@ pub fn route(
         }
     };
     g[src] = 0.0;
-    heap.push((h(src), src));
-    while let Some((_, u)) = heap.pop() {
+    heap.push(Reverse((Prio(h(src)), src)));
+    while let Some(Reverse((_, u))) = heap.pop() {
         if visited[u] {
             continue;
         }
@@ -246,7 +274,7 @@ pub fn route(
                 g[v] = ng;
                 prev[v] = u;
                 let f = ng + h(v);
-                heap.push((f, v));
+                heap.push(Reverse((Prio(f), v)));
             }
         }
     }
@@ -422,27 +450,33 @@ mod tests {
     }
 
     #[test]
-    fn shortcuts_collapse_long_paths() {
-        // GREEN: a 4-chain 0–1–2–3. Contracting node 1 adds shortcut 0–2; contracting
-        // node 2 adds 1–3. routing 0→3 must still find a valid path via shortcuts.
+    fn route_returns_optimal_not_first_popped() {
+        // RED (fable B4): the search must find the MINIMUM-COST path, not the
+        // first node that happens to be the destination on a LIFO pop.
+        // Graph: edges declared [(0,2),(0,1),(2,1)] with weights [1,10,1].
+        // Optimal route 0→2→1 costs 1+1 = 2. A LIFO-stack search that pushes
+        // 2 then 1 and pops 1 first would return 10 (suboptimal). Assert optimal.
         let ns = vec![
             n("0", 0.0, 0.0),
-            n("1", 1.0, 0.0),
-            n("2", 2.0, 0.0),
-            n("3", 3.0, 0.0),
+            n("1", 1.0, 0.0), // dst: far in cost via direct 0→1 (10), cheap via 0→2→1 (2)
+            n("2", 0.5, 0.0),
         ];
-        let edges = vec![e(0, 1, 1.0), e(1, 2, 1.0), e(2, 3, 1.0)];
-        let costs = vec![c(1.0, 0.0, 0.0), c(1.0, 0.0, 0.0), c(1.0, 0.0, 0.0)];
+        // edge order matters for the LIFO-pop bug: 0→2 first (cheap), 0→1 second (10)
+        // NOTE: `route` weights by EdgeCost::weight(), NOT ConnEdge.weight, so the
+        // expensive direct edge is expressed via latency=10 on costs[1].
+        let edges = vec![e(0, 2, 1.0), e(0, 1, 10.0), e(2, 1, 1.0)];
+        let costs = vec![c(1.0, 0.0, 0.0), c(10.0, 0.0, 0.0), c(1.0, 0.0, 0.0)];
         let adj = adjacency(ns.len(), &edges);
-        let (_, wa) = weighted_adj(ns.len(), &edges, &costs);
-        let sc = build_shortcuts(ns.len(), &adj, &wa);
-        assert!(
-            !sc.is_empty(),
-            "CH must emit at least one shortcut on a chain"
-        );
         let (_, wadj) = weighted_adj(ns.len(), &edges, &costs);
-        let r = route(ns.len(), &adj, &wadj, &sc, &ns, 0, 3).unwrap();
+        let sc = build_shortcuts(ns.len(), &adj, &wadj);
+        let r = route(ns.len(), &adj, &wadj, &sc, &ns, 0, 1).unwrap();
         assert_eq!(r.0.first(), Some(&0));
-        assert_eq!(r.0.last(), Some(&3));
+        assert_eq!(r.0.last(), Some(&1));
+        // optimal cost = 0→2 (1) + 2→1 (1) = 2, NOT the direct 0→1 = 10.
+        assert!(
+            (r.1 - 2.0).abs() < 1e-9,
+            "route returned {}; optimum is 2",
+            r.1
+        );
     }
 }

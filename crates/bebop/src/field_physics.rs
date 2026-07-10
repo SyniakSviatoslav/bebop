@@ -465,7 +465,18 @@ pub fn change_impact(
     floor: f64,
 ) -> (Vec<usize>, f64) {
     let mut bodies = build_bodies(nodes, solids, edges, 1.0);
-    let trace = simulate(&mut bodies, edges, 0.05, steps, Some((seed, amp)));
+    // B11 (fable): the simulation step MUST stay inside the repo's own stable
+    // corridor. `dt_corridor` pins dt ≤ 0.02 as stable and 0.05 as divergent;
+    // running the flagship blast-radius gate at 0.05 would simulate in the
+    // condemned regime. Use 0.02 (DR=0.02 constant) — never the divergent 0.05.
+    const CHANGE_IMPACT_DT: f64 = 0.02;
+    let trace = simulate(
+        &mut bodies,
+        edges,
+        CHANGE_IMPACT_DT,
+        steps,
+        Some((seed, amp)),
+    );
     let mut affected = Vec::new();
     for (i, b) in bodies.iter().enumerate() {
         if i == seed {

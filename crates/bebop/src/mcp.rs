@@ -992,7 +992,7 @@ mod tests {
             "forbidden-zone action must be refused: {txt}"
         );
 
-        let permitted = r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"gate_action","arguments":{"effect":[5.0],"forbidden_center":0.0,"forbidden_radius":0.5,"forbidden_height":10.0,"limit":0.5}}}"#;
+        let permitted = r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"gate_action","arguments":{"effect":[5.0],"forbidden_center":0.0,"forbidden_radius":0.5,"forbidden_height":10.0,"limit":1.0}}}"#;
         let r = h(permitted);
         let v: serde_json::Value = serde_json::from_str(&r).unwrap();
         let txt = v["result"]["content"][0]["text"].as_str().unwrap();

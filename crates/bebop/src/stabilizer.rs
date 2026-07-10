@@ -272,22 +272,35 @@ pub fn permit_action(
     limit: f64,
 ) -> Option<Vec<f64>> {
     let forbidden = c.forbidden_height > 0.0 && c.forbidden_radius > 0.0;
-    for &e in &c.effect {
-        if forbidden {
-            let d = (e - c.forbidden_center).abs();
+    // C2 (fable): check the APPLIED (saturated) effect, not the raw one. The raw
+    // value can clear the wall while the saturated value tanh(e) lands INSIDE it
+    // (e.g. effect=5, center=1.0, radius=0.05 → raw clears, tanh(5)≈0.9999 is
+    // inside). The value we actually ship is the saturated one, so that is what
+    // must be gated. `k` is the per-dim gain — fold it into the effect before
+    // saturating so caller-supplied dimensions are honored (not silently ignored).
+    let gained: Vec<f64> = c
+        .effect
+        .iter()
+        .enumerate()
+        .map(|(i, &e)| {
+            let ki = if i < k.len() { k[i] } else { 1.0 };
+            e * ki
+        })
+        .collect();
+    let applied: Vec<f64> = gained.iter().map(|&e| saturate(e, limit)).collect();
+    if forbidden {
+        for &a in &applied {
+            let d = (a - c.forbidden_center).abs();
             if d < c.forbidden_radius {
-                // inside the wall → V would spike → core refuses the WHOLE action.
+                // saturated value lands in the wall → V would spike → refuse ALL.
                 return None;
             }
         }
     }
-    // outside: apply each dim through the tanh saturating wall.
-    let applied: Vec<f64> = c.effect.iter().map(|&e| saturate(e, limit)).collect();
-    // sanity: baseline/k length must align (no silent shape mismatch)
+    // sanity: baseline length must align (no silent shape mismatch)
     if !baseline.is_empty() && applied.len() != baseline.len() {
         return None;
     }
-    let _ = k;
     Some(applied)
 }
 
@@ -474,6 +487,39 @@ mod tests {
         // RED: dt ≤ 0 must not fabricate instability (no division by zero, no false alarm).
         assert_eq!(lyapunov_derivative(1.0, 9.0, 0.0), 0.0);
         assert_eq!(lyapunov_derivative(1.0, 9.0, -1.0), 0.0);
+    }
+
+    #[test]
+    fn permit_action_gates_saturated_not_raw() {
+        // C2 (fable) RED: the gate must reject when the SHIPPED (saturated) value
+        // lands inside the forbidden wall — even if the raw value clears it.
+        // wall center=1.0, radius=0.05. raw effect 5.0 → |5-1|=4 (clears raw) but
+        // saturate(5.0,1.0)=tanh(5)≈0.9999 → |0.9999-1.0|≈1e-4 (INSIDE wall).
+        let c = ActionContract {
+            name: "big_push",
+            effect: vec![5.0],
+            forbidden_center: 1.0,
+            forbidden_radius: 0.05,
+            forbidden_height: 1.0,
+        };
+        let out = permit_action(&c, &[], &[], 1.0);
+        assert!(
+            out.is_none(),
+            "saturated value in wall ⇒ refuse (was Some under raw-check bug)"
+        );
+
+        // GREEN: a small effect that saturates outside the wall is applied.
+        let safe = ActionContract {
+            name: "small_push",
+            effect: vec![0.3],
+            forbidden_center: 1.0,
+            forbidden_radius: 0.05,
+            forbidden_height: 1.0,
+        };
+        let out = permit_action(&safe, &[], &[], 1.0);
+        assert!(out.is_some(), "safe effect ⇒ applied");
+        // shipped value is saturated: |0.3| < 1 ⇒ tanh(0.3)≈0.291
+        assert!((out.unwrap()[0] - 0.2913).abs() < 1e-3);
     }
 
     #[test]

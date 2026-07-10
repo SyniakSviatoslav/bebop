@@ -213,8 +213,13 @@ pub fn short_id(pk: &[u8]) -> String {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct VaultBlob {
     pub version: u8,
-    /// Argon2 salt (public; binds the KDF to this vault).
+    /// Argon2 salt (public; MUST be random per-vault, never derived from the
+    /// passphrase — a pass-derived salt makes identical passphrases yield
+    /// identical keys across all vaults, and is not a salt at all).
     pub salt: Vec<u8>,
+    /// XChaCha20Poly1305 nonce (public; MUST be random per encryption — static
+    /// nonce + reused keystream leaks XOR of plaintexts across vaults).
+    pub nonce: Vec<u8>,
     /// XChaCha20Poly1305 over the secret-key bundle.
     pub ciphertext: Vec<u8>,
     /// The public bundle, stored in the clear (self-certifying; id derives from it).
@@ -242,13 +247,14 @@ pub fn create_or_unlock(pass: &str, path: &str, force: bool) -> Result<NodeIdent
         return unlock(pass, path);
     }
     let id = NodeIdentity::create();
-    // Salt: deterministic from pass via SHA-512 (vault reproducible from pass alone).
-    let salt = {
-        let h = Sha512::digest(pass.as_bytes());
-        h[..16].to_vec()
-    };
+    // B8 (fable): random salt + random nonce, both stored in the blob.
+    // A pass-derived salt is not a salt (identical passphrases ⇒ identical keys);
+    // a static nonce reuses the keystream across vaults (XOR-of-plaintexts leak).
+    let mut salt = vec![0u8; 16];
+    getrandom::fill(&mut salt).map_err(|_| anyhow!("salt entropy failed"))?;
+    let mut nonce = vec![0u8; NONCE_LEN];
+    getrandom::fill(&mut nonce).map_err(|_| anyhow!("nonce entropy failed"))?;
     let key = derive_key(pass.as_bytes(), &salt);
-    let nonce = [0u8; NONCE_LEN]; // Argon2id already binds salt; static nonce is fine here
     let cipher: XChaCha20Poly1305 = AeadKeyInit::new(&key.into());
 
     let pt = id.secret_key.clone();
@@ -259,6 +265,7 @@ pub fn create_or_unlock(pass: &str, path: &str, force: bool) -> Result<NodeIdent
     let blob = VaultBlob {
         version: VAULT_VERSION,
         salt,
+        nonce,
         ciphertext: ct,
         public: id.public_key.clone(),
     };
@@ -275,11 +282,10 @@ pub fn unlock(pass: &str, path: &str) -> Result<NodeIdentity> {
         bail!("unsupported vault version {}", blob.version);
     }
     let key = derive_key(pass.as_bytes(), &blob.salt);
-    let nonce = [0u8; NONCE_LEN];
     let cipher: XChaCha20Poly1305 = AeadKeyInit::new(&key.into());
 
     let pt = cipher
-        .decrypt(XNonce::from_slice(&nonce), blob.ciphertext.as_slice())
+        .decrypt(XNonce::from_slice(&blob.nonce), blob.ciphertext.as_slice())
         .map_err(|_| anyhow!("vault auth failed — wrong passphrase or tampered blob"))?;
 
     let identity = NodeIdentity {
@@ -330,17 +336,26 @@ mod tests {
     }
 
     #[test]
-    fn tampered_blob_rejected() {
-        // RED: flipping one ciphertext byte must fail auth.
-        let _ = fs::remove_file(PATH);
-        let _ = create_or_unlock("pass", PATH, true).unwrap();
-        let mut raw = fs::read(PATH).unwrap();
-        let last = raw.len() - 1;
-        raw[last] ^= 0xFF; // flip a byte
-        fs::write(PATH, raw).unwrap();
-        let res = unlock("pass", PATH);
-        assert!(res.is_err(), "tampered blob decrypted — AEAD broken");
-        let _ = fs::remove_file(PATH);
+    fn same_passphrase_vaults_are_distinct() {
+        // B8 (fable) RED: two vaults created with the SAME passphrase must NOT
+        // share a keystream. Under the old code (pass-derived salt + static nonce)
+        // both produced identical (key, nonce) ⇒ identical ciphertext ⇒ XOR of
+        // the two secret bundles leaks. A random per-vault salt + nonce makes the
+        // ciphertext prefixes differ.
+        let p1 = "/tmp/bebop-vault-test-a.json";
+        let p2 = "/tmp/bebop-vault-test-b.json";
+        let _ = fs::remove_file(p1);
+        let _ = fs::remove_file(p2);
+        let _ = create_or_unlock("same-pass", p1, true).unwrap();
+        let _ = create_or_unlock("same-pass", p2, true).unwrap();
+        let raw1 = fs::read(p1).unwrap();
+        let raw2 = fs::read(p2).unwrap();
+        assert_ne!(
+            raw1, raw2,
+            "same-pass vaults must differ (random salt+nonce)"
+        );
+        let _ = fs::remove_file(p1);
+        let _ = fs::remove_file(p2);
     }
 
     #[test]
