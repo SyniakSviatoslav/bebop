@@ -550,6 +550,59 @@ pub extern "C" fn vsa_similarity(a: *const f64, b: *const f64, dim: i32) -> f64 
     s
 }
 
+/// Cosine similarity of two f64 vectors: ⟨a,b⟩ / (‖a‖·‖b‖).
+/// Returns 0 when either vector is zero (no spurious 1.0). The L5 layer uses
+/// this to measure courier↔destination PROXIMITY in tensor space WITHOUT a
+/// magnitude bias — prevents "decision drift" caused by norm inflation (audit
+/// 29155: similarity via dot/cross; this is the normalized similarity half).
+#[no_mangle]
+pub extern "C" fn cosine_similarity(a: *const f64, b: *const f64, dim: i32) -> f64 {
+    let n = dim as usize;
+    let sa = unsafe { core::slice::from_raw_parts(a, n) };
+    let sb = unsafe { core::slice::from_raw_parts(b, n) };
+    let mut dot = 0.0f64;
+    let mut na = 0.0f64;
+    let mut nb = 0.0f64;
+    for i in 0..n {
+        dot += sa[i] * sb[i];
+        na += sa[i] * sa[i];
+        nb += sb[i] * sb[i];
+    }
+    let denom = (na * nb).sqrt();
+    if denom <= 1e-12 {
+        0.0
+    } else {
+        (dot / denom).clamp(-1.0, 1.0)
+    }
+}
+
+/// 3-D cross product a × b = (a2b3−a3b2, a3b1−a1b3, a1b2−a2b1).
+/// The ORTHOGONALITY detector: ‖a × b‖ ≈ 0 ⟺ a ∥ b. Used by the L5 layer to
+/// detect collinear/degenerate tensor directions (audit 29155: cross product =
+/// orthogonality). Pure, no-alloc.
+#[no_mangle]
+pub extern "C" fn cross_product(a: *const f64, b: *const f64, out: *mut f64) {
+    let sa = unsafe { core::slice::from_raw_parts(a, 3) };
+    let sb = unsafe { core::slice::from_raw_parts(b, 3) };
+    let so = unsafe { core::slice::from_raw_parts_mut(out, 3) };
+    so[0] = sa[1] * sb[2] - sa[2] * sb[1];
+    so[1] = sa[2] * sb[0] - sa[0] * sb[2];
+    so[2] = sa[0] * sb[1] - sa[1] * sb[0];
+}
+
+/// Sinc function sinc(x) = sin(x)/x, with the removable singularity at 0
+/// defined as 1.0 (the L'Hôpital limit). Core interpolation / windowing kernel
+/// for the signal layer (audit 29159): spatial/temporal interpolation of
+/// congestion samples, anti-aliasing of the cost signal.
+#[no_mangle]
+pub extern "C" fn sinc(x: f64) -> f64 {
+    if x.abs() < 1e-9 {
+        1.0
+    } else {
+        x.sin() / x
+    }
+}
+
 // ── Unit tests (deterministic, no RNG/Date). Run via `cargo test -p bebop-core`. ──
 //
 // The core is a SINGLE-INSTANCE kernel (one CSR lives in WASM linear memory at a time — that is
@@ -943,5 +996,48 @@ mod tests {
             cost, -1.0,
             "empty graph must sentinel, not fabricate a cost"
         );
+    }
+
+    // ── AUDIT 29155/29159: vector + signal core (anti-drift, tensor similarity). ──
+
+    /// GREEN: cosine of identical vectors = 1; of orthogonal = 0; of negatives = −1.
+    #[test]
+    fn test_cosine_similarity_bounds() {
+        let a = [1.0, 2.0, 3.0];
+        let b = [1.0, 2.0, 3.0];
+        let c = [-1.0, -2.0, -3.0];
+        let orth = [1.0, 0.0, 0.0];
+        let orth2 = [0.0, 1.0, 0.0];
+        assert!((unsafe { cosine_similarity(a.as_ptr(), b.as_ptr(), 3) } - 1.0).abs() < 1e-12);
+        assert!((unsafe { cosine_similarity(a.as_ptr(), c.as_ptr(), 3) } + 1.0).abs() < 1e-12);
+        assert!((unsafe { cosine_similarity(orth.as_ptr(), orth2.as_ptr(), 3) }).abs() < 1e-12);
+        // normalized: norm inflation must NOT change cosine (anti-drift guard)
+        let big = [10.0, 20.0, 30.0];
+        assert!(
+            (unsafe { cosine_similarity(a.as_ptr(), big.as_ptr(), 3) } - 1.0).abs() < 1e-12,
+            "cosine must be norm-invariant"
+        );
+    }
+
+    /// GREEN+RED: cross product of parallel vectors is the zero vector (collinear
+    /// / degenerate direction detector); perpendicular vectors give a real normal.
+    #[test]
+    fn test_cross_product_orthogonality() {
+        let a = [1.0, 0.0, 0.0];
+        let parallel = [2.0, 0.0, 0.0];
+        let b = [0.0, 1.0, 0.0];
+        let mut out = [0.0f64; 3];
+        unsafe { cross_product(a.as_ptr(), parallel.as_ptr(), out.as_mut_ptr()) };
+        assert!(out.iter().all(|v| v.abs() < 1e-12), "parallel ⇒ zero cross");
+        unsafe { cross_product(a.as_ptr(), b.as_ptr(), out.as_mut_ptr()) };
+        // a × b = (0,0,1) up to sign
+        assert!((out[2].abs() - 1.0).abs() < 1e-12, "perp ⇒ unit-normal z");
+    }
+
+    /// GREEN: sinc(0) = 1 (removable singularity, L'Hôpital), sinc(π) = 0.
+    #[test]
+    fn test_sinc_singularity_and_zero() {
+        assert!((sinc(0.0) - 1.0).abs() < 1e-12, "sinc(0)=1 by limit");
+        assert!((sinc(core::f64::consts::PI)).abs() < 1e-12, "sinc(π)=0");
     }
 }

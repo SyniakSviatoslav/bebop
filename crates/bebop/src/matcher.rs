@@ -131,15 +131,58 @@ pub trait MatcherClient {
 }
 
 /// Reference client: runs the matcher IN-PROCESS. This is the default — it
-/// proves the matcher needs no server at all. A RemoteMatcherClient would hold
-/// a transport handle and forward `req` as JSON, returning parsed `MatcherResponse`;
-/// the trait keeps both interchangeable.
+/// proves the matcher needs no server at all. A `RemoteMatcherClient` holds a
+/// transport and forwards `req` as JSON; the trait keeps both interchangeable.
 #[derive(Default)]
 pub struct LocalMatcherClient;
 
 impl MatcherClient for LocalMatcherClient {
     fn match_batch(&self, req: &MatcherRequest) -> MatcherResponse {
         match_orders(req)
+    }
+}
+
+/// Transport abstraction for a REMOTE matcher. The client codes to this trait,
+/// NOT to a hostname — so any node (or a fleet of them) can serve. This is what
+/// makes DANGER #1 structurally impossible: there is no privileged endpoint,
+/// only an interchangeable transport.
+pub trait Transport {
+    /// Send the serialized request, return the serialized response (or an error
+    /// string). Implementations: in-process bus, HTTP, p2p/gossip, stdio, queue.
+    fn send(&self, req_json: &str) -> Result<String, String>;
+}
+
+/// In-memory transport: a stand-in for "another node on the network". It runs
+/// the SAME `match_orders` locally, proving the wire contract is faithful — the
+/// remote node is just another correct implementation, not a trusted authority.
+#[derive(Default)]
+pub struct InMemoryTransport;
+
+impl Transport for InMemoryTransport {
+    fn send(&self, req_json: &str) -> Result<String, String> {
+        let req: MatcherRequest =
+            serde_json::from_str(req_json).map_err(|e| format!("bad request: {e}"))?;
+        let resp = match_orders(&req);
+        serde_json::to_string(&resp).map_err(|e| format!("bad response: {e}"))
+    }
+}
+
+/// Remote reference client: serializes the request over a `Transport`, parses
+/// the response. Identical output to `LocalMatcherClient` (proven by test) — the
+/// ONLY difference is WHERE the pure function runs. Swapping transports = moving
+/// dispatch between nodes with zero caller changes.
+pub struct RemoteMatcherClient<T: Transport> {
+    pub transport: T,
+}
+
+impl<T: Transport> MatcherClient for RemoteMatcherClient<T> {
+    fn match_batch(&self, req: &MatcherRequest) -> MatcherResponse {
+        let json = serde_json::to_string(req).expect("req serializes");
+        let resp_json = self
+            .transport
+            .send(&json)
+            .expect("transport delivers a response");
+        serde_json::from_str(&resp_json).expect("response parses")
     }
 }
 
@@ -257,5 +300,26 @@ mod tests {
         let rjson = serde_json::to_string(&resp).expect("resp serializes");
         let rback: MatcherResponse = serde_json::from_str(&rjson).expect("resp deserializes");
         assert_eq!(fingerprint(&resp), fingerprint(&rback));
+    }
+
+    #[test]
+    fn remote_matches_local_over_wire() {
+        // RED+GREEN: the RemoteMatcherClient (over the InMemoryTransport, a stand-in
+        // for "another node") must produce the SAME result as the local client.
+        // Proves the standardized interface is faithful — any node can serve, the
+        // wire changes nothing. This closes the "interface" half of the audit's
+        // blocker question; the remaining half (trust) is the reputation ledger.
+        let req = sample_req();
+        let local = LocalMatcherClient.match_batch(&req);
+        let remote = RemoteMatcherClient {
+            transport: InMemoryTransport,
+        }
+        .match_batch(&req);
+        assert_eq!(
+            fingerprint(&local),
+            fingerprint(&remote),
+            "remote over wire == local in-process: interface is faithful"
+        );
+        assert_eq!(local.assignments, remote.assignments);
     }
 }

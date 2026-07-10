@@ -25,6 +25,7 @@ pub mod field; // re-exports the rust-core field contract (native target)
 pub mod field_physics; // fundamental-mass field sim: mass=connections, gravity+springs+waves, Lyapunov gate
 pub mod geometry_field; // geometric + wave sim of the connection graph (geometry, waves, cycles, divergence)
 pub mod governor;
+pub mod guard; // GUARD: Input/Output guards + consensus kill-switch (audit 29158)
 pub mod knowledge;
 pub mod launch;
 pub mod ledger; // deterministic double-entry money/resource boundary (TigerBeetle invariant)
@@ -38,12 +39,14 @@ pub mod multipilot;
 pub mod optical; // deterministic perceptual-hash image search (aHash + Hamming)
 pub mod outfit;
 pub mod pddl; // deterministic STRIPS-style planner + chain-of-thought trace
+pub mod pod; // POD: pseudonymous Proof-of-Delivery (Princess Pi attribution, audit 29157)
 pub mod portkey; // deterministic local transport / gateway abstraction (pub-sub bus)
 pub mod radio; // the ship's lounge — free-to-listen Lofi/Jazz streams
 pub mod recall_graph; // SPIKE (eval-gated): codebase-memory-mcp graph-first retrieval
 pub mod reconnect; // MHD "magnetic reconnection": topology change to shed overload energy
 pub mod redteam; // T3MP3ST deterministic red-team prompt scanner
 pub mod registry; // content-addressed module registry (deterministic)
+pub mod reputation; // REPUTATION: node-trust ledger (the real decentralization blocker)
 pub mod research_patterns; // reverse-engineered patterns (research pass 2026-07-10)
 pub mod router; // the token/model router (cheapest adequate)
 pub mod sandbox; // cloud sandbox: isolated command exec, network-off fail-closed
