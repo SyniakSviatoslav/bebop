@@ -15,6 +15,7 @@ pub mod audit; // tamper-evident hash-chained audit log (deterministic)
 pub mod cli; // the `bebop <cmd>` dispatcher (also the TUI entry)
 pub mod coherence; // wave interference (|ψ₁±ψ₂|²) over the field kernel
 pub mod copilot;
+pub mod cost_estimate; // Hybrid Cost-Aware Engine: k-d filter + BFS guard + A*/Dijkstra + CH (the "Cost Estimation" node)
 pub mod customize; // the three customization axes (looks / narration / patrons)
 pub mod detect; // N1–N8 operational-graph detector battery (deterministic, RED+GREEN)
 pub mod doc_claims;
