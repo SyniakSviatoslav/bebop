@@ -50,7 +50,7 @@ impl EdgeCost {
 /// Build the weighted adjacency (neighbor list + parallel weight list) from edges.
 /// `costs[e]` aligns with `edges[e]`. Returns (adj, wadj) where `wadj[u][k]` is the
 /// weight of the k-th edge out of `u` (matching `adj[u][k]`).
-fn weighted_adj(
+pub fn weighted_adj(
     n: usize,
     edges: &[ConnEdge],
     costs: &[EdgeCost],

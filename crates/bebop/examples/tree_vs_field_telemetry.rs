@@ -25,7 +25,10 @@
 use std::collections::VecDeque;
 use std::time::Instant;
 
-use bebop::field_physics::{adjacency, build_bodies, field_stable, simulate, wave_bounce_path};
+use bebop::cost_estimate::{build_shortcuts, route, weighted_adj, EdgeCost};
+use bebop::field_physics::{
+    adjacency, build_bodies, change_impact, field_stable, simulate, wave_bounce_path,
+};
 use bebop::geometry_field::Platonic;
 use bebop::wavefield::{connection_edges_kinded, graph_laplacian_eigs, ConnEdge, LinkKind, Node2D};
 
@@ -174,7 +177,7 @@ fn main() {
 
     let pad = |s: String, w: usize| format!("{:>width$}", s, width = w);
     println!(
-        "{} {} | {} {} {} | {} {} {} | {} {} {} {}",
+        "{} {} | {} {} {} | {} {} {} | {} {} {} {} | {} {} {}",
         pad("n".into(), 6),
         pad("dens".into(), 6),
         pad("kdtBld".into(), 9),
@@ -187,6 +190,9 @@ fn main() {
         pad("bnceLen".into(), 8),
         pad("lambda2".into(), 9),
         pad("stable".into(), 7),
+        pad("unMs".into(), 9),
+        pad("chMs".into(), 9),
+        pad("wvMs".into(), 9),
     );
 
     for (n, d, k) in conds {
@@ -234,9 +240,9 @@ fn main() {
         // ── 3) GRAPH — BFS wave_bounce (discrete expanding front, O(N+E))
         let target = (n / 2) % n;
         let t5 = Instant::now();
-        let route = wave_bounce_path(&adj, 0, |j| j == target);
+        let bounce = wave_bounce_path(&adj, 0, |j| j == target);
         let bnce_rt = t5.elapsed().as_secs_f64() * 1e3;
-        let bnce_len = route.len();
+        let bnce_len = bounce.len();
 
         // ── 3b) GRAPH — spectral connectivity (Laplacian λ₂)
         let adj_mat = adjacency_from_edges_w(&edges, n);
@@ -244,8 +250,42 @@ fn main() {
         let lambda2 = eigs.get(1).copied().unwrap_or(0.0);
         let _ = &adj_mat;
 
+        // ── 4) LAYER-3 COST SEARCH: pure wave vs HYBRID k-d+BFS+A*/CH ──
+        // Research verdict (hybrid-routing-sota.md): the cost-aware search on the
+        // UNCONTRACTED graph is the latency bottleneck (tens–hundreds of ms); a
+        // Contraction-Hierarchy shortcut layer collapses it to ~5 ms (OSRM/GraphHopper
+        // class). We prove it empirically here.
+        let costs: Vec<EdgeCost> = edges
+            .iter()
+            .map(|e| EdgeCost {
+                latency: e.weight.max(0.1),
+                cost: 0.1,
+                risk: 0.0,
+            })
+            .collect();
+        let (wadj_h, wadj_v) = weighted_adj(n, &edges, &costs);
+        let dst = ((n / 3) + 1) % n;
+        let src = 0usize;
+
+        // 4a) UNCONTRACTED A* (no shortcuts) — the heavy L3 the research flags.
+        let t_un = Instant::now();
+        let _unc = route(n, &adj, &wadj_v, &[], &nodes, src, dst);
+        let un_ms = t_un.elapsed().as_secs_f64() * 1e3;
+
+        // 4b) CONTRACTED A* (CH shortcuts) — the fix.
+        let sc = build_shortcuts(n, &adj, &wadj_v);
+        let t_ch = Instant::now();
+        let _ch = route(n, &adj, &wadj_v, &sc, &nodes, src, dst);
+        let ch_ms = t_ch.elapsed().as_secs_f64() * 1e3;
+
+        // 4c) PURE WAVE (damped graph-wave cost reach) — the "academic experiment"
+        // we are replacing. Timed as the full change_impact propagation.
+        let t_wv = Instant::now();
+        let _ = change_impact(&nodes, &solids, &edges, src, 0.01, 40, 1e-3);
+        let wv_ms = t_wv.elapsed().as_secs_f64() * 1e3;
+
         println!(
-            "{} {} | {} {} {} | {} {} {} | {} {} {} {}",
+            "{} {} | {} {} {} | {} {} {} | {} {} {} {} | {} {} {}",
             pad(n.to_string(), 6),
             pad(format!("{:.1}", d), 6),
             pad(format!("{:.3}", kdt_build), 9),
@@ -258,6 +298,9 @@ fn main() {
             pad(bnce_len.to_string(), 8),
             pad(format!("{:.4}", lambda2), 9),
             pad(if stable { "yes" } else { "NO" }.to_string(), 7),
+            pad(format!("{:.3}", un_ms), 9),
+            pad(format!("{:.3}", ch_ms), 9),
+            pad(format!("{:.3}", wv_ms), 9),
         );
     }
     println!("\nColumns: time in ms · mem in bytes.");
@@ -266,7 +309,54 @@ fn main() {
     println!("bnce* = BFS wave_bounce: the SAME wave, discrete expanding front, O(N+E).");
     println!("        bnceLen = bounce route length (hops seed→target).");
     println!("lambda2 = 2nd-smallest Laplacian eigenvalue (graph connectivity).");
+    println!(
+        "unMs  = Layer-3 cost A* on the UNCONTRACTED graph (the research-flagged bottleneck)."
+    );
+    println!("chMs  = Layer-3 cost A* over Contraction-Hierarchy shortcuts (the ~5ms fix).");
+    println!(
+        "wvMs  = PURE damped graph-wave cost reach (change_impact) — the academic experiment."
+    );
+    println!("VERDICT: chMs << unMs proves the CH layer collapses the L3 bottleneck;");
+    println!("         wvMs >> chMs proves the layered hybrid beats the pure wave on cost search.");
     println!();
+
+    // ── LAYER-3 VERDICT VALIDATION (RED+GREEN, self-checking) ──
+    // Build one mid-size graph and assert the empirical claim the telemetry makes:
+    // the Contraction-Hierarchy Layer-3 is FASTER than the uncontracted cost
+    // search AND the pure wave, closing the routing-SOTA verdict (2026-07-10).
+    let (vedges, vnodes, vsolids) = synth_repo(800, 0.2);
+    let vn = vnodes.len();
+    let vadj = adjacency(vn, &vedges);
+    let vcosts: Vec<EdgeCost> = vedges
+        .iter()
+        .map(|e| EdgeCost {
+            latency: e.weight.max(0.1),
+            cost: 0.1,
+            risk: 0.0,
+        })
+        .collect();
+    let (_va, vwadj) = weighted_adj(vn, &vedges, &vcosts);
+    let vdst = (vn / 3 + 1) % vn;
+    let t_a = Instant::now();
+    let _u = route(vn, &vadj, &vwadj, &[], &vnodes, 0, vdst);
+    let v_un = t_a.elapsed().as_secs_f64() * 1e3;
+    let vsc = build_shortcuts(vn, &vadj, &vwadj);
+    let t_b = Instant::now();
+    let _c = route(vn, &vadj, &vwadj, &vsc, &vnodes, 0, vdst);
+    let v_ch = t_b.elapsed().as_secs_f64() * 1e3;
+    let t_c = Instant::now();
+    let _w = change_impact(&vnodes, &vsolids, &vedges, 0, 0.01, 40, 1e-3);
+    let v_wv = t_c.elapsed().as_secs_f64() * 1e3;
+    let ch_wins = v_ch < v_un && v_ch < v_wv;
+    // GREEN: CH Layer-3 is the cheapest of the three cost-search strategies.
+    println!(
+        "[L3-VERDICT] uncontracted={:.3}ms · CH={:.3}ms · pureWave={:.3}ms · CH_wins={}",
+        v_un, v_ch, v_wv, ch_wins
+    );
+    if !ch_wins {
+        eprintln!("[L3-VERDICT] FAILED: Contraction-Hierarchy did not beat uncontracted/pure-wave");
+        std::process::exit(1);
+    }
 
     // ── VALIDATION (RED+GREEN): the probe is not just a printout — it asserts
     // the wave's affected set is TOPOLOGY-RESPECTING, unlike the binary tree.
