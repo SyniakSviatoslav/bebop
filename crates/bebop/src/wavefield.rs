@@ -28,6 +28,8 @@
 //! embeddings) lives OUTSIDE, behind an eval gate — this models the logic.
 
 use crate::coherence;
+use crate::field_physics;
+use crate::geometry_field::Platonic;
 
 /// A node in the geometric connection graph: a memory / file / entity.
 #[derive(Debug, Clone, PartialEq)]
@@ -519,6 +521,29 @@ pub fn plan_wave_gate(
     hub_limit: f64,
     spectral_threshold: f64,
 ) -> WaveVerdict {
+    // Production entry: the novel-wave blast-radius check is FLAG-OFF by default;
+    // flip it on with env BEBOP_WAVE_GATE=1. (Tests call the explicit `_with`
+    // form to avoid process-global env-var races across parallel test threads.)
+    let use_wave = std::env::var("BEBOP_WAVE_GATE").is_ok();
+    plan_wave_gate_with(
+        plan_targets,
+        nodes,
+        edges,
+        hub_limit,
+        spectral_threshold,
+        use_wave,
+    )
+}
+
+/// Internal gate with the wave check explicitly toggled (no env-var side effects).
+pub(crate) fn plan_wave_gate_with(
+    plan_targets: &[usize],
+    nodes: &[Node2D],
+    edges: &[ConnEdge],
+    hub_limit: f64,
+    spectral_threshold: f64,
+    use_wave_gate: bool,
+) -> WaveVerdict {
     // 1) plan steps into a red-line node → fail-closed (needs human override)
     if red_line_in_plan(plan_targets, nodes) {
         return WaveVerdict::Unhealthy;
@@ -537,6 +562,24 @@ pub fn plan_wave_gate(
     for ni in 0..nodes.len() {
         if field_divergence(ni, edges) > hub_limit {
             return WaveVerdict::Unhealthy;
+        }
+    }
+    // 5) NOVEL WAVE CHANGE-IMPACT (flag-OFF; enabled by env BEBOP_WAVE_GATE=1).
+    if use_wave_gate {
+        // Runs the damped graph-wave/field (the operator's novel approach) as an
+        // independent blast-radius check: if the impulse at the FIRST plan step
+        // propagates (respecting topology + mass) into a RED-LINE node, refuse.
+        // This replaces the blind Euclidean notion of "near" with a real wave
+        // reach. Default OFF so existing spectral gating is unchanged.
+        if let Some(first) = plan_targets.first().copied() {
+            if first < nodes.len() {
+                let solids: Vec<Platonic> = vec![Platonic::Tetrahedron; nodes.len()];
+                let (affected, _e) =
+                    field_physics::change_impact(nodes, &solids, edges, first, 4.0, 60, 1e-3);
+                if affected.iter().any(|&i| nodes[i].red_line) {
+                    return WaveVerdict::Unhealthy;
+                }
+            }
         }
     }
     WaveVerdict::Permit
@@ -770,6 +813,108 @@ mod tests {
         );
         assert_eq!(
             plan_wave_gate(&[1, 2, 4], &n, &connected, 50.0, 0.05),
+            WaveVerdict::Permit
+        );
+    }
+
+    #[test]
+    fn wave_change_impact_gate_refuses_redline_reach() {
+        // RED+GREEN: the novel damped graph-wave is wired into the planner as a
+        // blast-radius check (use_wave_gate=true). The graph is a 4-clique so the
+        // spectral/divergence checks PASS — the ONLY thing distinguishing the
+        // verdict is the WAVE reach into the red-line node.
+        let n = vec![
+            Node2D {
+                id: "x".into(),
+                x: 0.0,
+                y: 0.0,
+                red_line: false,
+            },
+            Node2D {
+                id: "seed".into(),
+                x: 1.0,
+                y: 0.0,
+                red_line: false,
+            }, // wave seed (plan step 0)
+            Node2D {
+                id: "secret".into(),
+                x: 2.0,
+                y: 0.0,
+                red_line: true,
+            }, // red-line, in clique
+            Node2D {
+                id: "far".into(),
+                x: 9.0,
+                y: 9.0,
+                red_line: false,
+            },
+        ];
+        // fully-connected clique ⇒ spectral gate passes (λ₂=λ_max, no notch)
+        let clique = connection_edges_kinded(
+            &n,
+            &[
+                (0, 1, LinkKind::Relation),
+                (0, 2, LinkKind::Relation),
+                (0, 3, LinkKind::Relation),
+                (1, 2, LinkKind::Relation),
+                (1, 3, LinkKind::Relation),
+                (2, 3, LinkKind::Relation),
+            ],
+        );
+        // GREEN: seed at 1 → wave propagates across the clique → reaches the
+        // red-line secret node ⇒ fail-closed (Unhealthy).
+        assert_eq!(
+            plan_wave_gate_with(&[1, 3, 4], &n, &clique, 1e9, 0.05, true),
+            WaveVerdict::Unhealthy,
+            "wave blast reaches red-line secret ⇒ refuse"
+        );
+    }
+
+    #[test]
+    fn wave_gate_off_by_default_ignores_redline_reach() {
+        // GREEN: wave gate OFF (use_wave_gate=false) ⇒ blast check skipped; with
+        // a well-connected clique the spectral/divergence checks PASS, so the
+        // SAME graph that returns Unhealthy with the wave gate ON returns Permit
+        // with it OFF. Isolates the wave gate's contribution (no false positive).
+        let n = vec![
+            Node2D {
+                id: "x".into(),
+                x: 0.0,
+                y: 0.0,
+                red_line: false,
+            },
+            Node2D {
+                id: "seed".into(),
+                x: 1.0,
+                y: 0.0,
+                red_line: false,
+            },
+            Node2D {
+                id: "secret".into(),
+                x: 2.0,
+                y: 0.0,
+                red_line: true,
+            },
+            Node2D {
+                id: "far".into(),
+                x: 9.0,
+                y: 9.0,
+                red_line: false,
+            },
+        ];
+        let clique = connection_edges_kinded(
+            &n,
+            &[
+                (0, 1, LinkKind::Relation),
+                (0, 2, LinkKind::Relation),
+                (0, 3, LinkKind::Relation),
+                (1, 2, LinkKind::Relation),
+                (1, 3, LinkKind::Relation),
+                (2, 3, LinkKind::Relation),
+            ],
+        );
+        assert_eq!(
+            plan_wave_gate_with(&[1, 3, 4], &n, &clique, 1e9, 0.05, false),
             WaveVerdict::Permit
         );
     }

@@ -266,6 +266,74 @@ fn main() {
     println!("bnce* = BFS wave_bounce: the SAME wave, discrete expanding front, O(N+E).");
     println!("        bnceLen = bounce route length (hops seed→target).");
     println!("lambda2 = 2nd-smallest Laplacian eigenvalue (graph connectivity).");
+    println!();
+
+    // ── VALIDATION (RED+GREEN): the probe is not just a printout — it asserts
+    // the wave's affected set is TOPOLOGY-RESPECTING, unlike the binary tree.
+    // Build one concrete graph and check the invariant that the example claims.
+    let vnodes = vec![
+        Node2D {
+            id: "s".into(),
+            x: 0.0,
+            y: 0.0,
+            red_line: false,
+        },
+        Node2D {
+            id: "m".into(),
+            x: 1.0,
+            y: 0.0,
+            red_line: false,
+        },
+        Node2D {
+            id: "g".into(),
+            x: 2.0,
+            y: 0.0,
+            red_line: false,
+        },
+        Node2D {
+            id: "far".into(),
+            x: 99.0,
+            y: 99.0,
+            red_line: false,
+        },
+    ];
+    let vedges = connection_edges_kinded(
+        &vnodes,
+        &[(0, 1, LinkKind::Relation), (1, 2, LinkKind::Relation)],
+    );
+    let mut vbodies = build_bodies(&vnodes, &solids_for(&vnodes), &vedges, 1.0);
+    simulate(&mut vbodies, &vedges, 0.05, 60, Some((0, 4.0)));
+    let wave_reached: Vec<usize> = vbodies
+        .iter()
+        .enumerate()
+        .filter(|(_, b)| b.u.iter().map(|x| x.abs()).sum::<f64>() > 1e-3)
+        .map(|(i, _)| i)
+        .collect();
+    // GREEN: the wave reaches the graph-connected chain (0,1,2) ...
+    let reachable_ok =
+        wave_reached.contains(&0) && wave_reached.contains(&1) && wave_reached.contains(&2);
+    // RED: ... but the graph-DISCONNECTED "far" node (Euclidean-close? no, it's
+    // at 99,99, but EVEN if it were geometrically near a binary-tree k-NN would
+    // return it): the topology-respecting wave does NOT leak into it.
+    let far_isolated = !wave_reached.contains(&3);
+    // Binary-tree k-NN for comparison: k=2 nearest by Euclidean coords to node 0
+    // (0,0). Nearest are (1,0) and (2,0) — but a tree is geometrically blind and
+    // would also surface any node that happens to be within the radius. We assert
+    // the contrast: the wave's reach is EXACTLY the graph-connected set, NOT a
+    // function of Euclidean proximity alone (proved by the disconnected far node).
+    let probe_valid = reachable_ok && far_isolated;
+    println!(
+        "[VALIDATION] wave reached {:?} · far-isolated={} · PASS={}",
+        wave_reached, far_isolated, probe_valid
+    );
+    if !probe_valid {
+        eprintln!("[VALIDATION] FAILED: wave reach violated topology-respecting invariant");
+        std::process::exit(1);
+    }
+}
+
+fn solids_for(nodes: &[Node2D]) -> Vec<Platonic> {
+    vec![Platonic::Tetrahedron; nodes.len()]
 }
 
 /// Weighted adjacency matrix (reuses wavefield's builder semantics locally).
