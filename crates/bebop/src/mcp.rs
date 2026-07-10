@@ -164,7 +164,13 @@ pub fn call_tool(name: &str, args: &serde_json::Value) -> Result<String, String>
                 .unwrap_or("")
                 .to_string();
             let n = args.get("n").and_then(|n| n.as_u64()).unwrap_or(3) as usize;
-            let r = run_multipilot(&task, n, native_exec, Some(|| field_gate(&task)));
+            let r = run_multipilot(
+                &task,
+                n,
+                crate::multipilot::MULTIPILOT_CONTEXT,
+                native_exec,
+                Some(|| field_gate(&task)),
+            );
             Ok(format!(
                 "multipilot({n}) → ok={} | field={:?}\n{}",
                 r.ok, r.field_verdict, r.note

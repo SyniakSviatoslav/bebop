@@ -201,7 +201,13 @@ pub fn run() {
                 "multipilot engaging",
                 &o,
             );
-            let r = run_multipilot(&task, n, native_exec, Some(|| field_gate(&task)));
+            let r = run_multipilot(
+                &task,
+                n,
+                crate::multipilot::MULTIPILOT_CONTEXT,
+                native_exec,
+                Some(|| field_gate(&task)),
+            );
             println!(
                 "  ◈ multipilot({n}) → ok={} | field={:?}",
                 r.ok, r.field_verdict
