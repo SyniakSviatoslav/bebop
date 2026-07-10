@@ -47,12 +47,20 @@ impl Mesh {
     }
 
     /// Subscribe `node` to a topic. Returns a handle id.
-    pub fn join(&self, node: &str, topic: &str, f: impl Fn(&Envelope) + Send + Sync + 'static) -> usize {
+    pub fn join(
+        &self,
+        node: &str,
+        topic: &str,
+        f: impl Fn(&Envelope) + Send + Sync + 'static,
+    ) -> usize {
         let mut g = self.inner.lock().unwrap();
         let id = g.next_id;
         g.next_id += 1;
         g.handlers.insert(id, Box::new(f));
-        g.subs.entry(topic.to_string()).or_default().push((node.to_string(), id));
+        g.subs
+            .entry(topic.to_string())
+            .or_default()
+            .push((node.to_string(), id));
         id
     }
 
@@ -76,7 +84,8 @@ impl Mesh {
         for (node, id) in &targets {
             if let Some(h) = g.handlers.get(id) {
                 h(env);
-                g.log.push((node.clone(), env.topic.clone(), env.body.clone()));
+                g.log
+                    .push((node.clone(), env.topic.clone(), env.body.clone()));
                 count += 1;
             }
         }
@@ -121,9 +130,19 @@ mod tests {
         let hits = Arc::new(Mutex::new(0usize));
         let h2 = hits.clone();
         let id = m.join("nodeC", "alerts", move |_| *h2.lock().unwrap() += 1);
-        m.publish(&Envelope { topic: "alerts".into(), from: "x".into(), to: "".into(), body: "1".into() });
+        m.publish(&Envelope {
+            topic: "alerts".into(),
+            from: "x".into(),
+            to: "".into(),
+            body: "1".into(),
+        });
         m.leave("alerts", id);
-        m.publish(&Envelope { topic: "alerts".into(), from: "x".into(), to: "".into(), body: "2".into() });
+        m.publish(&Envelope {
+            topic: "alerts".into(),
+            from: "x".into(),
+            to: "".into(),
+            body: "2".into(),
+        });
         assert_eq!(*hits.lock().unwrap(), 1, "node received after leaving mesh");
     }
 }

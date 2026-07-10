@@ -18,7 +18,11 @@ pub struct Gray<'a> {
 
 impl<'a> Gray<'a> {
     pub fn new(width: usize, height: usize, pixels: &'a [u8]) -> Self {
-        Gray { width, height, pixels }
+        Gray {
+            width,
+            height,
+            pixels,
+        }
     }
 
     fn at(&self, x: usize, y: usize) -> u8 {
@@ -83,7 +87,10 @@ impl OpticalIndex {
     }
 
     pub fn add(&mut self, id: &str, img: &Gray) {
-        self.refs.push(Ref { id: id.to_string(), hash: ahash(img) });
+        self.refs.push(Ref {
+            id: id.to_string(),
+            hash: ahash(img),
+        });
     }
 
     /// Find the closest reference within `max_dist` Hamming bits. Returns
@@ -152,7 +159,9 @@ mod tests {
         let near_img = Gray::new(16, 16, &near);
         let mut idx = OpticalIndex::new();
         idx.add("ship_a", &base);
-        let m = idx.search(&near_img, 10).expect("should match within 10 bits");
+        let m = idx
+            .search(&near_img, 10)
+            .expect("should match within 10 bits");
         assert_eq!(m.0, "ship_a");
     }
 

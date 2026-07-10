@@ -19,7 +19,11 @@ pub struct GraphView<'a> {
 
 impl<'a> GraphView<'a> {
     fn out_deg(&self, i: usize) -> Vec<usize> {
-        self.edges.iter().filter(|(s, _)| *s == i).map(|(_, d)| *d).collect()
+        self.edges
+            .iter()
+            .filter(|(s, _)| *s == i)
+            .map(|(_, d)| *d)
+            .collect()
     }
     fn in_deg(&self, i: usize) -> usize {
         self.edges.iter().filter(|(_, d)| *d == i).count()
@@ -159,7 +163,11 @@ pub fn n6_dead_nodes(g: &GraphView, sources: &[usize]) -> Vec<usize> {
 /// N7: given two reachability snapshots, returns nodes that were live then dead now.
 pub fn n7_liveness_regression(prev_live: &[usize], now_live: &[usize]) -> Vec<usize> {
     let now: std::collections::HashSet<usize> = now_live.iter().cloned().collect();
-    prev_live.iter().cloned().filter(|p| !now.contains(p)).collect()
+    prev_live
+        .iter()
+        .cloned()
+        .filter(|p| !now.contains(p))
+        .collect()
 }
 
 // ── N8: anomaly correlation (which anomalies co-occur on the same node) ─────
@@ -185,7 +193,12 @@ mod tests {
     use super::*;
 
     fn g<'b>(edges: &'b [(usize, usize)], load: &'b [f64]) -> GraphView<'b> {
-        GraphView { n: load.len(), edges, node_load: load, edge_weight: None }
+        GraphView {
+            n: load.len(),
+            edges,
+            node_load: load,
+            edge_weight: None,
+        }
     }
 
     #[test]
@@ -206,7 +219,12 @@ mod tests {
     fn n2_flags_heavy_edge() {
         let e = [(0usize, 1usize), (1, 2), (2, 0)];
         let w = [0.1f64, 0.9, 0.1];
-        let graph = GraphView { n: 3, edges: &e, node_load: &[0.0; 3], edge_weight: Some(&w) };
+        let graph = GraphView {
+            n: 3,
+            edges: &e,
+            node_load: &[0.0; 3],
+            edge_weight: Some(&w),
+        };
         let a = n2_edge_anomaly(&graph, 0.66);
         assert!(a.contains(&1), "heavy edge missed: {a:?}");
     }
@@ -255,7 +273,10 @@ mod tests {
     #[test]
     fn n8_correlates_double_hit() {
         let c = n8_correlate(&[vec![1, 2], vec![2, 3]]);
-        assert!(c.iter().any(|(n, _)| *n == 2), "correlated node missed: {c:?}");
+        assert!(
+            c.iter().any(|(n, _)| *n == 2),
+            "correlated node missed: {c:?}"
+        );
         // node 1 hits only once → not correlated
         assert!(!c.iter().any(|(n, _)| *n == 1));
     }

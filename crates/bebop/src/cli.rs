@@ -2,16 +2,16 @@
 //! Subcommands mirror the documented surface; the interactive TUI (launch anim)
 //! is reached via `bebop` with no args on a TTY.
 
+use crate::audit::AuditLog;
 use crate::field::field_gate;
 use crate::knowledge::recall;
 use crate::mcp::{native_exec, seed_memory};
 use crate::multipilot::run_multipilot;
 use crate::outfit::OUTFIT;
-use crate::redteam::{default_rules, scan, verdict, Verdict};
 use crate::pddl::{plan_traced, Action, Pred};
-use crate::audit::AuditLog;
-use crate::zkvm::{cross, verify, verify_expect};
+use crate::redteam::{default_rules, scan, verdict, Verdict};
 use crate::vault::create_or_unlock;
+use crate::zkvm::{cross, verify, verify_expect};
 use std::env;
 
 pub fn run() {

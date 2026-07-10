@@ -120,7 +120,12 @@ pub fn plan(init: &[Pred], actions: &[Action], goal: &[Pred], max_steps: usize) 
 }
 
 /// Alias kept for call-site clarity (the traced planner is canonical).
-pub fn plan_traced(init: &[Pred], actions: &[Action], goal: &[Pred], max_steps: usize) -> Option<Plan> {
+pub fn plan_traced(
+    init: &[Pred],
+    actions: &[Action],
+    goal: &[Pred],
+    max_steps: usize,
+) -> Option<Plan> {
     plan(init, actions, goal, max_steps)
 }
 

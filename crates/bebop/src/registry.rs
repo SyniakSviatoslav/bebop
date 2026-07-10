@@ -20,7 +20,7 @@ fn sha256(s: &str) -> String {
 pub struct Module {
     pub name: String,
     pub version: String,
-    pub spec: String, // the capability description / contract text
+    pub spec: String,    // the capability description / contract text
     pub address: String, // = H(name || version || spec)
 }
 
@@ -62,7 +62,10 @@ impl Registry {
     /// Register a module. Returns Err if the name already exists (no silent overwrite).
     pub fn register(&mut self, m: Module) -> anyhow::Result<()> {
         if !m.self_consistent() {
-            anyhow::bail!("module {} has inconsistent address (tampered spec?)", m.name);
+            anyhow::bail!(
+                "module {} has inconsistent address (tampered spec?)",
+                m.name
+            );
         }
         if self.by_name.contains_key(&m.name) {
             anyhow::bail!("module {} already registered", m.name);

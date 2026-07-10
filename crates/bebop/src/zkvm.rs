@@ -84,7 +84,10 @@ mod tests {
         let (next, r) = cross(b"ledger-v1", b"+100", b"credit", append);
         assert_eq!(next, b"ledger-v1+100".to_vec());
         assert!(verify(&r), "valid receipt failed verification");
-        assert!(verify_expect(&r, b"ledger-v1+100"), "expected next mismatch");
+        assert!(
+            verify_expect(&r, b"ledger-v1+100"),
+            "expected next mismatch"
+        );
     }
 
     #[test]

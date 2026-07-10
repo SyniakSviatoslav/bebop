@@ -104,7 +104,10 @@ impl AuditLog {
             .last()
             .map(|e| e.hash.clone())
             .unwrap_or_else(|| "GENESIS".to_string());
-        Ok(AuditLog { entries, prev_hash: prev })
+        Ok(AuditLog {
+            entries,
+            prev_hash: prev,
+        })
     }
 }
 
