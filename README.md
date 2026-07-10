@@ -125,7 +125,7 @@ command and exposes `verifySelfEvolution()` — the agent can prove its own evol
 ## Verification
 
 ```bash
-cargo test           # 202 Rust tests (186 bebop + 16 rust-core), RED+GREEN, 0 fail
+cargo test           # 212 Rust tests (196 bebop + 16 rust-core), RED+GREEN, 0 fail
 cargo check          # 0 errors (typecheck)
 node scripts/verify-doc-claims.mjs        # doc-claim falsifiability gate
 node scripts/guardrail-falsifiable-proof.mjs   # every #[test] must be falsifiable

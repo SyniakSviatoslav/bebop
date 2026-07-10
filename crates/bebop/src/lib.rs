@@ -47,7 +47,8 @@ pub mod stress; // 3-level stress benchmark (injection / double-bind / telemetry
 pub mod svc; // space-vector control smoothing (αβ trajectory, damping)
 pub mod tui; // the ratatui TUI: red-spaceship launch + interactive frame
 pub mod vault;
+pub mod wiring;
 pub mod zenoh; // deterministic mesh transport (local broker; Portkey-swappable)
-pub mod zkvm; // deterministic verifiable state-transition boundary (commit/verify)
+pub mod zkvm; // deterministic verifiable state-transition boundary (commit/verify) // 3-layer runtime: field sim ↔ L5 stabilizer ↔ living memory ↔ project gating
 
 pub use outfit::{Narration, Outfit, Palette, OUTFIT};

@@ -60,13 +60,31 @@ pub fn tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "field",
-            description: "Unified-field telemetry map (L3): J_z stress per node, MHD reconnect, SEAL tolerance loop.",
-            input_schema: r#"{"type":"object","properties":{}}"#,
+            description: "Unified-field telemetry verdict (L3): red-line physics veto. Returns verdict variant + refused flag for telemetry.",
+            input_schema: r#"{"type":"object","properties":{"task":{"type":"string"}}}"#,
         },
         McpTool {
             name: "boundary",
             description: "zkVM deterministic state-transition seal (commit/verify).",
             input_schema: r#"{"type":"object","properties":{"prev":{"type":"string"},"input":{"type":"string"},"meta":{"type":"string"}}}"#,
+        },
+        McpTool {
+            name: "stabilize",
+            description:
+                "L5 Neuro-Symbolic Gate: run the Lyapunov stabilizer + consensual ensemble on an L5-proposed delta. Returns the applied (bounded) delta and the ensemble verdict.",
+            input_schema: r#"{"type":"object","properties":{"v_prev":{"type":"number"},"v_cur":{"type":"number"},"dt":{"type":"number"},"proposed_delta":{"type":"number"},"limit":{"type":"number"},"proposals":{"type":"array","items":{"type":"number"}},"entropy_threshold":{"type":"number"}},"required":["v_prev","v_cur","dt","proposed_delta","limit"]}"#,
+        },
+        McpTool {
+            name: "gate_action",
+            description:
+                "L5 ActionContract gate: refuse an action whose effect lands in the forbidden zone (geometric wall), else apply the saturated effect.",
+            input_schema: r#"{"type":"object","properties":{"effect":{"type":"array","items":{"type":"number"}},"forbidden_center":{"type":"number"},"forbidden_radius":{"type":"number"},"forbidden_height":{"type":"number"},"baseline":{"type":"array","items":{"type":"number"}},"k":{"type":"array","items":{"type":"number"}},"limit":{"type":"number"}},"required":["effect","forbidden_center","forbidden_radius","forbidden_height","limit"]}"#,
+        },
+        McpTool {
+            name: "wire",
+            description:
+                "3-LAYER RUNTIME: run a task through field sim (red-line veto) → L5 stabilizer (bounded delta) → living memory (record) → action/TargetScope gate. Returns the unified proceed decision + reason.",
+            input_schema: r#"{"type":"object","properties":{"task":{"type":"string"},"v_prev":{"type":"number"},"v_cur":{"type":"number"},"dt":{"type":"number"},"proposed_delta":{"type":"number"},"limit":{"type":"number"},"effect":{"type":"array","items":{"type":"number"}},"forbidden_center":{"type":"number"},"forbidden_radius":{"type":"number"},"forbidden_height":{"type":"number"},"baseline":{"type":"array","items":{"type":"number"}},"k":{"type":"array","items":{"type":"number"}}},"required":["task"]}"#,
         },
     ]
 }
@@ -255,6 +273,24 @@ pub fn call_tool(name: &str, args: &serde_json::Value) -> Result<String, String>
                 log.verify().is_none()
             ))
         }
+        "field" => {
+            // L3 unified-field telemetry (G3): surface the verdict variant +
+            // refused flag for telemetry, while staying fail-closed (Unhealthy
+            // also refuses). Honest signal: caller can distinguish physics
+            // veto (override) from sim-degraded refusal (unhealthy).
+            let task = args
+                .get("task")
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string();
+            let verdict = field_gate_verdict(&task);
+            Ok(format!(
+                "field: verdict={:?} refused={} string='{}'",
+                verdict,
+                verdict.refused(),
+                verdict.as_str()
+            ))
+        }
         "boundary" => {
             let prev = args
                 .get("prev")
@@ -288,6 +324,167 @@ pub fn call_tool(name: &str, args: &serde_json::Value) -> Result<String, String>
                 r.seal
             ))
         }
+        "stabilize" => {
+            // L5 Neuro-Symbolic Gate (advisor proposes, kernel decides).
+            let v_prev = args.get("v_prev").and_then(|v| v.as_f64()).unwrap_or(1.0);
+            let v_cur = args.get("v_cur").and_then(|v| v.as_f64()).unwrap_or(1.0);
+            let dt = args.get("dt").and_then(|v| v.as_f64()).unwrap_or(1.0);
+            let proposed = args
+                .get("proposed_delta")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            let limit = args.get("limit").and_then(|v| v.as_f64()).unwrap_or(0.5);
+            let applied =
+                crate::stabilizer::stabilize_step(v_prev, v_cur, dt, proposed, limit, 0.0);
+
+            // Optional consensual ensemble: if `proposals` supplied, aggregate.
+            let ensemble = args.get("proposals").and_then(|a| a.as_array()).map(|arr| {
+                let ps: Vec<f64> = arr.iter().filter_map(|x| x.as_f64()).collect();
+                let eth = args
+                    .get("entropy_threshold")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.1);
+                crate::stabilizer::consensual_aggregate(&ps, limit, eth)
+            });
+            let ensemble_txt = match ensemble {
+                Some(Some(v)) => format!("ensemble_applied={v:.4}"),
+                Some(None) => "ensemble=ignored_l5(disagreement)".to_string(),
+                None => "ensemble=skipped(no proposals)".to_string(),
+            };
+            Ok(format!(
+                "L5 stabilize: v_prev={v_prev} v_cur={v_cur} dt={dt} proposed={proposed} limit={limit} -> applied={applied:.4} (bounded) | {ensemble_txt}"
+            ))
+        }
+        "gate_action" => {
+            // L5 ActionContract: geometric forbidden-zone wall.
+            let effect: Vec<f64> = args
+                .get("effect")
+                .and_then(|a| a.as_array())
+                .map(|arr| arr.iter().filter_map(|x| x.as_f64()).collect())
+                .unwrap_or_default();
+            let fc = args
+                .get("forbidden_center")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            let fr = args
+                .get("forbidden_radius")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            let fh = args
+                .get("forbidden_height")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            let baseline: Vec<f64> = args
+                .get("baseline")
+                .and_then(|a| a.as_array())
+                .map(|arr| arr.iter().filter_map(|x| x.as_f64()).collect())
+                .unwrap_or_default();
+            let k: Vec<f64> = args
+                .get("k")
+                .and_then(|a| a.as_array())
+                .map(|arr| arr.iter().filter_map(|x| x.as_f64()).collect())
+                .unwrap_or_default();
+            let limit = args.get("limit").and_then(|v| v.as_f64()).unwrap_or(0.5);
+            let contract = crate::stabilizer::ActionContract {
+                name: "mcp-action",
+                effect,
+                forbidden_center: fc,
+                forbidden_radius: fr,
+                forbidden_height: fh,
+            };
+            match crate::stabilizer::permit_action(&contract, &baseline, &k, limit) {
+                Some(applied) => Ok(format!(
+                    "L5 gate_action: PERMITTED -> applied_effect=[{:.4}] (saturated, cleared wall)",
+                    applied.iter().map(|x| *x).sum::<f64>()
+                )),
+                None => Ok(
+                    "L5 gate_action: REFUSED (effect lands in forbidden zone — fail-closed)"
+                        .to_string(),
+                ),
+            }
+        }
+        "wire" => {
+            // 3-LAYER RUNTIME (field sim ↔ L5 stabilizer ↔ living memory ↔ project gate).
+            let task = args
+                .get("task")
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string();
+            let l5 = crate::wiring::L5Proposal {
+                v_prev: args.get("v_prev").and_then(|v| v.as_f64()).unwrap_or(1.0),
+                v_cur: args.get("v_cur").and_then(|v| v.as_f64()).unwrap_or(1.0),
+                dt: args.get("dt").and_then(|v| v.as_f64()).unwrap_or(1.0),
+                proposed_delta: args
+                    .get("proposed_delta")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0),
+                limit: args.get("limit").and_then(|v| v.as_f64()).unwrap_or(0.5),
+                ..Default::default()
+            };
+            // Optional ActionContract (forbidden-zone wall).
+            let effect: Vec<f64> = args
+                .get("effect")
+                .and_then(|a| a.as_array())
+                .map(|arr| arr.iter().filter_map(|x| x.as_f64()).collect())
+                .unwrap_or_default();
+            let contract = if effect.is_empty() {
+                None
+            } else {
+                Some(crate::stabilizer::ActionContract {
+                    name: "wire-action",
+                    effect,
+                    forbidden_center: args
+                        .get("forbidden_center")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0),
+                    forbidden_radius: args
+                        .get("forbidden_radius")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0),
+                    forbidden_height: args
+                        .get("forbidden_height")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0),
+                })
+            };
+            let baseline: Vec<f64> = args
+                .get("baseline")
+                .and_then(|a| a.as_array())
+                .map(|arr| arr.iter().filter_map(|x| x.as_f64()).collect())
+                .unwrap_or_default();
+            let k: Vec<f64> = args
+                .get("k")
+                .and_then(|a| a.as_array())
+                .map(|arr| arr.iter().filter_map(|x| x.as_f64()).collect())
+                .unwrap_or_default();
+
+            // Ephemeral state per call (MCP is request/response; persistent memory
+            // would require a stateful server — out of scope for the stdio loop).
+            let mut mm = crate::memory::LivingMemory::new();
+            let mut audit = crate::research_patterns::AuditLog::new();
+            let out = crate::wiring::wire(
+                &task,
+                &l5,
+                contract.as_ref(),
+                &baseline,
+                &k,
+                None,
+                None,
+                &mut mm,
+                &mut audit,
+            );
+            Ok(format!(
+                "WIRE: task='{}' field={:?} l5_applied={:.4} action_ok={} proceed={} reason='{}' mem={} audit={}",
+                task,
+                out.field,
+                out.l5_applied,
+                out.action_permitted,
+                out.proceed,
+                out.reason,
+                out.memory_nodes,
+                out.audit_entries
+            ))
+        }
         _ => Err(format!("unknown tool: {name}")),
     }
 }
@@ -313,7 +510,7 @@ pub fn native_exec(task: &str) -> crate::copilot::NativeOutcome {
 }
 
 /// Field arbiter re-export — the real graph-PDE veto lives in `crate::field`.
-pub use crate::field::field_gate;
+pub use crate::field::{field_gate, field_gate_verdict};
 
 /// A small seeded memory so recall returns real payloads over MCP.
 pub fn seed_memory() -> LivingMemory {
@@ -358,7 +555,16 @@ mod tests {
             .map(|t| t["name"].as_str().unwrap())
             .collect();
         for n in [
-            "dispatch", "recall", "outfit", "scan", "plan", "audit", "boundary",
+            "dispatch",
+            "recall",
+            "outfit",
+            "scan",
+            "plan",
+            "audit",
+            "field",
+            "boundary",
+            "stabilize",
+            "gate_action",
         ] {
             assert!(names.contains(&n), "tool not advertised: {n}");
         }
@@ -425,5 +631,74 @@ mod tests {
         // RED: a dispatch targeting a red-line glob must be vetoed by the field.
         assert_eq!(field_gate("auth/login.ts"), "override");
         assert_eq!(field_gate("docs/design/foo.md"), "permit");
+    }
+
+    #[test]
+    fn mcp_l5_stabilize_bounds_and_freezes() {
+        // GREEN+RED (G2): the L5 stabilize tool bounds motion under stable field
+        // and freezes (applied=0) under destabilizing V̇>0.
+        let stable = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"stabilize","arguments":{"v_prev":1.0,"v_cur":0.9,"dt":1.0,"proposed_delta":100.0,"limit":0.5}}}"#;
+        let r = handle(stable);
+        let v: serde_json::Value = serde_json::from_str(&r).unwrap();
+        let txt = v["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(
+            txt.contains("applied=0.5000"),
+            "stable L5 must be bounded: {txt}"
+        );
+
+        let unstable = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"stabilize","arguments":{"v_prev":0.9,"v_cur":2.0,"dt":1.0,"proposed_delta":100.0,"limit":0.5}}}"#;
+        let r = handle(unstable);
+        let v: serde_json::Value = serde_json::from_str(&r).unwrap();
+        let txt = v["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(
+            txt.contains("applied=0.0000"),
+            "destabilizing L5 must freeze: {txt}"
+        );
+    }
+
+    #[test]
+    fn mcp_l5_gate_action_refuses_forbidden_zone() {
+        // RED+GREEN (G2): an action whose effect lands in the forbidden zone is
+        // REFUSED over MCP; a safe action is PERMITTED (saturated).
+        let refused = r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"gate_action","arguments":{"effect":[0.0],"forbidden_center":0.0,"forbidden_radius":0.5,"forbidden_height":10.0,"limit":0.5}}}"#;
+        let r = handle(refused);
+        let v: serde_json::Value = serde_json::from_str(&r).unwrap();
+        let txt = v["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(
+            txt.contains("REFUSED"),
+            "forbidden-zone action must be refused: {txt}"
+        );
+
+        let permitted = r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"gate_action","arguments":{"effect":[5.0],"forbidden_center":0.0,"forbidden_radius":0.5,"forbidden_height":10.0,"limit":0.5}}}"#;
+        let r = handle(permitted);
+        let v: serde_json::Value = serde_json::from_str(&r).unwrap();
+        let txt = v["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(
+            txt.contains("PERMITTED"),
+            "safe action must be permitted: {txt}"
+        );
+    }
+
+    #[test]
+    fn mcp_field_tool_surfaces_verdict_telemetry() {
+        // G3: the `field` MCP tool surfaces the verdict variant + refused flag,
+        // and stays fail-closed (Unhealthy also refuses).
+        let red = r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"field","arguments":{"task":"rotate deploy secrets"}}}"#;
+        let r = handle(red);
+        let v: serde_json::Value = serde_json::from_str(&r).unwrap();
+        let txt = v["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(
+            txt.contains("verdict=Override") && txt.contains("refused=true"),
+            "red-line must refuse: {txt}"
+        );
+
+        let benign = r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"field","arguments":{"task":"write the docs"}}}"#;
+        let r = handle(benign);
+        let v: serde_json::Value = serde_json::from_str(&r).unwrap();
+        let txt = v["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(
+            txt.contains("verdict=Permit") && txt.contains("refused=false"),
+            "benign must permit: {txt}"
+        );
     }
 }
