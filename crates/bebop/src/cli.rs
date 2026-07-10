@@ -7,6 +7,10 @@ use crate::knowledge::recall;
 use crate::mcp::{native_exec, seed_memory};
 use crate::multipilot::run_multipilot;
 use crate::outfit::OUTFIT;
+use crate::redteam::{default_rules, scan, verdict, Verdict};
+use crate::pddl::{plan_traced, Action, Pred};
+use crate::audit::AuditLog;
+use crate::zkvm::{cross, verify, verify_expect};
 use crate::vault::create_or_unlock;
 use std::env;
 
@@ -240,6 +244,15 @@ pub fn run() {
                 "outfit",
                 "customize",
                 "vault",
+                "detect",
+                "redteam",
+                "audit",
+                "registry",
+                "pddl",
+                "portkey",
+                "optical",
+                "zenoh",
+                "zkvm",
                 "launch",
                 "mission",
                 "radio",
@@ -323,6 +336,96 @@ pub fn run() {
                 ],
             );
         }
+        "scan" => {
+            // T3MP3ST red-team scan of a prompt/text — deterministic, offline.
+            let text = rest.join(" ");
+            if text.trim().is_empty() {
+                eprintln!("  ✖ scan: give me text to scan — `bebop scan \"<text>\"`");
+                std::process::exit(2);
+            }
+            let rules = default_rules();
+            let hits = scan(&text, &rules);
+            let v = verdict(&text, &rules);
+            println!(
+                "  ◈ T3MP3ST scan — verdict: {v:?} ({})",
+                match v {
+                    Verdict::Allow => "allow",
+                    Verdict::Block => "BLOCK",
+                }
+            );
+            if hits.is_empty() {
+                println!("  ✓ no storm-signals matched");
+            } else {
+                for h in &hits {
+                    println!("    • [{}] {:?} — {}", h.rule_id, h.severity, h.matched);
+                }
+            }
+        }
+        "plan" => {
+            // PDDL logicalCot — deterministic STRIPS plan. Demo: move block A
+            // from src→dst. (Real actions are built here, not parsed from argv,
+            // to keep the CLI honest and the planner deterministic.)
+            let init = [Pred::new("at", &["A", "src"])];
+            let actions = [Action {
+                name: "move".into(),
+                pre: vec![Pred::new("at", &["A", "src"])],
+                add: vec![Pred::new("at", &["A", "dst"])],
+                del: vec![Pred::new("at", &["A", "src"])],
+            }];
+            let goal = [Pred::new("at", &["A", "dst"])];
+            match plan_traced(&init, &actions, &goal, 12) {
+                Some(p) => {
+                    println!("  ◈ PDDL logicalCot — plan ({} steps):", p.actions.len());
+                    for (i, a) in p.actions.iter().enumerate() {
+                        println!("    {}: {a}", i + 1);
+                    }
+                    for line in &p.trace {
+                        println!("    ↳ {line}");
+                    }
+                }
+                None => println!("  ✖ no plan found within bound"),
+            }
+        }
+        "audit" => {
+            // Tamper-evident audit chain demo — append events, prove integrity.
+            let mut log = AuditLog::new();
+            let events = [
+                ("operator", "node.boot", "staging"),
+                ("operator", "vault.unlock", "ok"),
+                ("agent", "dispatch.fanout", "3 pilots"),
+                ("guard", "field.gate.pass", "tolerance ok"),
+                ("operator", "mission.signoff", "cigar lit"),
+            ];
+            for (i, (actor, action, payload)) in events.iter().enumerate() {
+                log.append((i + 1) as u64, actor, action, payload);
+            }
+            println!("  ◈ audit chain — {} entries, sealed:", log.len());
+            println!("    intact = {}", log.verify().is_none());
+        }
+        "boundary" => {
+            // zkVM boundary — commit a state transition, verify it.
+            let prev = rest.first().cloned().unwrap_or_else(|| "ledger-v1".into());
+            let input = rest.get(1).cloned().unwrap_or_else(|| "+100".into());
+            let meta = rest.get(2).cloned().unwrap_or_else(|| "credit".into());
+            let (computed, r) = cross(
+                prev.as_bytes(),
+                input.as_bytes(),
+                meta.as_bytes(),
+                |p, i| {
+                    let mut v = p.to_vec();
+                    v.extend_from_slice(i);
+                    v
+                },
+            );
+            let ok = verify(&r) && verify_expect(&r, &computed);
+            println!("  ◈ zkVM boundary — prev='{prev}' input='{input}'");
+            println!(
+                "    next='{}'  seal={}",
+                String::from_utf8_lossy(&computed),
+                r.seal
+            );
+            println!("    verified = {ok}");
+        }
         other => {
             eprintln!("  unknown command: {other}  (try `bebop help`)");
             std::process::exit(2);
@@ -360,6 +463,7 @@ fn print_help() {
     println!("  init [--looks RRGGBB --narration X --home URL --force] | preview [--transition] | boot | outfit | status");
     println!("  node [--pass X --path Y] | recall <q>  (alias: research <q>) | radio [<n>|onair|stop] | help");
     println!("  dispatch \"<task>\" [--n N] | route <task> | map | diagrams");
+    println!("  scan \"<text>\" (T3MP3ST redteam) | plan (PDDL logicalCot) | audit (hash-chained log) | boundary <prev> <input> [<meta>] (zkVM-sealed transition)");
     println!("  mission [--title T] | mcp   (the sign-off — dock + cigar; also fires at loop end)");
     println!("  (interactive TUI with the sun-warm launch: run `bebop` in a TTY)");
     println!("  {}", OUTFIT.home);

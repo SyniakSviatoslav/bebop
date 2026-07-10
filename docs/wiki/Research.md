@@ -31,5 +31,10 @@ FEP, VSA codec) was synthesized from a research dump and is **documented, not al
   core that *is* implemented in `rust-core`).
 
 **Honest status:** the deterministic field core, the VSA similarity, the router, and the **hybrid
-post-quantum vault** are *real and tested*. The Zenoh mesh and zkVM boundary remain **research
-slots** — not yet in the native core. They are deferred gap items, not silent losses.
+post-quantum vault** are *real and tested*. The Zenoh mesh and zkVM boundary are now wired
+into the native core as **honest prototypes** (not silent losses, not faked as production):
+`src/zenoh.rs` is a local broker with the same pub/sub iface as `portkey` (swap-in point for a
+real Zenoh/network transport); `src/zkvm.rs` is a deterministic commit/verify state seal
+(replace the hash-seal with a real zk proof system when the boundary needs crypto-grade
+non-interactivity). TigerBeetle ledger integration remains a **research slot** — not yet in the
+native core. All wired items are covered by `doc_claims` + the falsifiable-proof guardrail.

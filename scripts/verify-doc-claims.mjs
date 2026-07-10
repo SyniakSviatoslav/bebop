@@ -85,7 +85,7 @@ function check(name, ok, detail = '') {
 let pass = 0, failc = 0;
 try {
   for (const manifest of [path.join(ROOT, 'crates/bebop/Cargo.toml'), path.join(ROOT, 'rust-core/Cargo.toml')]) {
-    const out = execFileSync('cargo', ['test', '--quiet', '--manifest-path', manifest], { encoding: 'utf8', timeout: 300000, stdio: ['ignore', 'pipe', 'pipe'] });
+    const out = execFileSync('cargo', ['test', '--quiet', '--lib', '--manifest-path', manifest], { encoding: 'utf8', timeout: 300000, stdio: ['ignore', 'pipe', 'pipe'] });
     for (const line of out.split('\n')) {
       const m = line.match(/test result: ok\.\s*(\d+) passed/);
       if (m) pass += Number(m[1]);

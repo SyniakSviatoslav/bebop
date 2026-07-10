@@ -29,4 +29,4 @@ bebop                               # interactive TUI with the sun-warm launch (
   half closes the harvest-now-decrypt-later threat; the classical half is a fallback if a PQ
   primitive regresses. The vault is **not** symmetric-only — the PQ half is wired and tested
   (`vault::tests`, `doc_claims::claim_vault_roundtrip_real`).
-- **81 Rust tests** green (65 `bebop` + 16 `bebop-core`). No TypeScript in the runtime path.
+- **117 Rust tests** green (101 `bebop` + 16 `bebop-core`). No TypeScript in the runtime path.
