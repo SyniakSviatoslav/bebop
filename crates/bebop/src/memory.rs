@@ -1,6 +1,10 @@
 //! Living memory — the ONE associative store (VSA + graph + recursion).
 //! Ported from `src/memory.ts`. Deterministic: a forgetting clock
 //! (`tick`) decays + evicts like human memory. No RNG/Date in output paths.
+//!
+//! Eviction is NON-DESTRUCTIVE: nodes that age out of the live `nodes` map are
+//! MOVED to an `attic` (cold tier) rather than dropped. This preserves the raw
+//! state and gives a restore path, so forgetting is reversible.
 
 use std::collections::HashMap;
 
@@ -21,6 +25,9 @@ pub enum Layer {
 
 pub struct LivingMemory {
     nodes: HashMap<String, MemoryNode>,
+    /// Cold tier: evicted nodes are MOVED here, never dropped, so they stay
+    /// recoverable via `restore` / `get_from_attic`.
+    attic: HashMap<String, MemoryNode>,
     clock: u64,
 }
 
@@ -28,6 +35,7 @@ impl LivingMemory {
     pub fn new() -> Self {
         LivingMemory {
             nodes: HashMap::new(),
+            attic: HashMap::new(),
             clock: 0,
         }
     }
@@ -51,18 +59,62 @@ impl LivingMemory {
         self.nodes.len()
     }
 
+    /// Number of nodes currently preserved in the cold-tier attic.
+    pub fn attic_size(&self) -> usize {
+        self.attic.len()
+    }
+
     /// Read-only access to the stored nodes (used by the knowledge retriever).
     pub fn nodes(&self) -> &std::collections::HashMap<String, MemoryNode> {
         &self.nodes
     }
 
+    /// Read-only access to the cold-tier attic (evicted-but-preserved nodes).
+    pub fn attic(&self) -> &std::collections::HashMap<String, MemoryNode> {
+        &self.attic
+    }
+
+    /// True if `id` is currently preserved in the attic (evicted, not live).
+    pub fn attic_contains(&self, id: &str) -> bool {
+        self.attic.contains_key(id)
+    }
+
+    /// Borrow a node straight from the attic without restoring it to live.
+    pub fn get_from_attic(&self, id: &str) -> Option<&MemoryNode> {
+        self.attic.get(id)
+    }
+
+    /// Restore a previously-evicted node from the attic back into the live map.
+    /// Returns `true` if a node with `id` was in the attic and restored.
+    pub fn restore(&mut self, id: &str) -> bool {
+        if let Some(node) = self.attic.remove(id) {
+            self.nodes.insert(node.id.clone(), node);
+            true
+        } else {
+            false
+        }
+    }
+
     /// Advance the forgetting clock: every tick ages nodes; old ones evict.
+    /// Evicted nodes are MOVED to the `attic` (cold tier) — never dropped — so
+    /// the raw state is preserved and recoverable via `restore`.
     pub fn tick(&mut self) {
         self.clock += 1;
-        // Evict nodes whose id hash mod 7 == clock mod 7 (deterministic "forgetting").
+        // Evict nodes whose concept hash mod 7 == clock mod 7 (deterministic "forgetting").
         let target = (self.clock % 7) as u8;
-        self.nodes
-            .retain(|_, n| (simple_hash(n.concept.as_bytes()) as u8) % 7 != target);
+        let mut evicted: Vec<(String, MemoryNode)> = Vec::new();
+        self.nodes.retain(|id, n| {
+            if (simple_hash(n.concept.as_bytes()) as u8) % 7 == target {
+                // Move to attic instead of dropping.
+                evicted.push((id.clone(), n.clone()));
+                false
+            } else {
+                true
+            }
+        });
+        for (id, node) in evicted {
+            self.attic.insert(id, node);
+        }
     }
 
     pub fn layer_size(&self, l: Layer) -> usize {
@@ -108,5 +160,37 @@ mod tests {
         }
         assert_eq!(a.size(), b.size(), "forgetting is non-deterministic");
         assert!(a.size() < 20, "tick forgot nothing");
+    }
+
+    #[test]
+    fn tick_moves_evicted_node_to_attic() {
+        // RED on the OLD `nodes.retain(...)` (destructive) code: the evicted
+        // node is permanently gone and `attic`/`attic_contains` do not exist.
+        // GREEN after the move-to-attic fix: the node is gone from `nodes` but
+        // preserved in `attic` and recoverable via `restore`.
+        let mut m = LivingMemory::new();
+        let id = m.remember("copilot", "native doer/checker");
+        // Over 7 ticks `clock % 7` cycles through every bucket 0..=6, so this
+        // node's eviction bucket is guaranteed to be hit at least once.
+        for _ in 0..7 {
+            m.tick();
+        }
+        // Evicted -> no longer live.
+        assert!(
+            !m.nodes().contains_key(&id),
+            "node still live after its eviction tick"
+        );
+        // NON-DESTRUCTIVE: preserved in the cold tier, not dropped.
+        assert!(
+            m.attic_contains(&id),
+            "evicted node was permanently deleted; it must be preserved in the attic"
+        );
+        // Restore path brings it back into the live map unchanged.
+        assert!(m.restore(&id), "restore() failed to recover node from attic");
+        assert!(m.nodes().contains_key(&id), "node not restored into live map");
+        assert_eq!(m.size(), 1);
+        assert_eq!(m.attic_size(), 0, "restored node should leave the attic");
+        // Raw payload preserved across eviction + restore.
+        assert_eq!(m.nodes().get(&id).unwrap().payload, "native doer/checker");
     }
 }
