@@ -176,7 +176,8 @@ fn fmul(a: &Fp, r: &Fp) -> Fp {
 }
 
 /// Decode a 16-byte little-endian block into 5×26-bit limbs (Poly1305-Donna layout).
-/// `hibit` is the 2^128 bit, set for every block EXCEPT the final one (RFC 8439 §2.5.1).
+/// `hibit` is the 2^128 bit. Per RFC 8439 §2.5.1 `n = le(block) + 2^(8·bl)` is added for
+/// EVERY block, so a full 16-byte block carries `hibit = 1` regardless of position.
 fn block_to_fp(bytes: &[u8; 16], hibit: u32) -> Fp {
     let t0 = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
     let t1 = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
@@ -352,12 +353,6 @@ fn constant_time_eq(a: &[u8; 16], b: &[u8; 16]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn hexstr(b: &[u8]) -> String {
-        let mut s = String::new();
-        for x in b { s.push_str(&format!("{:02x}", x)); }
-        s
-    }
-
     fn hex(s: &str) -> Vec<u8> {
         (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
     }
