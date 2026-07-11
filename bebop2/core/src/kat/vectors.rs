@@ -26,11 +26,11 @@ pub const SHA3_256: &[(&str, &str)] = &[
 ];
 
 /// draft-irtf-cfrg-xchacha-03 §2.2.1 HChaCha20.
-/// key = 00..1f, nonce = 00 00 00 09 00 00 00 4a 00 00 00 00 00 00 00 00.
+/// key = 00..1f, nonce = 00 00 00 09 00 00 00 4a 00 00 00 00 31 41 59 27.
 pub const HCHACHA20: HChacha20Vector = HChacha20Vector {
     key: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-    nonce: "000000090000004a0000000000000000",
-    out: "82413b4227b27bfed30e42508a877d73aed2e4ebf8eec792bb31824b74583c84",
+    nonce: "000000090000004a0000000031415927",
+    out: "82413b4227b27bfed30e42508a877d73a0f9e4d58a74a853c12ec41326d3ecdc",
 };
 
 pub struct HChacha20Vector {

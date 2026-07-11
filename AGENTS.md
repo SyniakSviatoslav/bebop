@@ -162,7 +162,7 @@ CI schedule (`openwiki-update.yml`) and is kept in sync with `git` diffs — tre
 documentation, not gospel; verify non-trivial claims against code.
 
 ## Verify before claiming done
-- `cargo test` — 356 Rust tests (275 bebop + 19 bebop-core + 62 bebop2-core C8), RED+GREEN, 0 fail.
+- `cargo test` — 366 Rust tests (275 bebop + 19 bebop-core + 72 bebop2-core C8), RED+GREEN, 0 fail.
 - `cargo run -p bebop -- boot` — guard-OS self-certification (must go RED to be trusted).
 - After any doc change: `node scripts/verify-doc-claims.mjs` — doc claims must match live Rust code (pre-commit + CI).
 - `node scripts/guardrail-falsifiable-proof.mjs` — every #[test] must have a RED path (pre-commit + CI).
