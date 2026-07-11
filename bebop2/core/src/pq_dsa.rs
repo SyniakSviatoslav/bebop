@@ -709,6 +709,84 @@ mod tests {
         assert_eq!(&out[..32], &expected[..], "SHAKE256(abc) KAT mismatch");
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // ML-DSA-65 deterministic bit-exact KAT (golden-vector) tests.
+    //
+    // FINDING (see task report): bebop2's ML-DSA-65 serialization is NOT FIPS 204
+    // bit-exact — pk=3104B (FIPS 1952), sig=3896B (FIPS 3309), c̃=32B (FIPS 48B),
+    // pk uses 13-bit t1 packing (FIPS 10-bit), sig uses 24-bit z packing
+    // (FIPS 20-bit) and a custom hint layout (pack_sig comment: "not
+    // NIST-bit-exact"). There is also no public deserialization API to import a
+    // reference (pk,sk) — MlDsa65Sk is only constructible via keygen(). Therefore
+    // the OFFICIAL NIST CSRC / FIPS 204 KAT (msg,pk,sk,sig) cannot be asserted
+    // byte-exact against this implementation without a serialization rewrite.
+    //
+    // What IS verified here: signing is DETERMINISTIC for a fixed (sk,msg,rnd)
+    // and reproduces a pinned golden byte-vector, i.e. a self-consistent KAT that
+    // guards against silent output drift. The reference format is FIPS 204:
+    //   https://nvlpubs.nist.gov/nistpubs/fips/nist.fips.204.pdf
+    // Golden bytes were captured from bebop2 HEAD 0567003 (this branch), rnd=0
+    // (ML-DSA deterministic mode).
+    #[test]
+    fn mldsa65_deterministic_kat_golden() {
+        let seed = [7u8; 32];
+        let (_pk, sk) = keygen(&seed);
+        let msg = b"probe";
+        let rnd = [0u8; 32]; // deterministic mode (FIPS 204 Alg 2 with rnd=0)
+        let sig = sign(&sk, msg, &rnd);
+        let sig_bytes = pack_sig(&sig.z, &sig.h);
+
+        // GREEN: exact size + exact digest of full serialized signature.
+        assert_eq!(sig_bytes.len(), 3896, "bebop2 sig serialization size drifted");
+        let mut dig = [0u8; 32];
+        shake256(&sig_bytes, &mut dig);
+        let expected_digest: [u8; 32] = [
+            0x6c, 0x6a, 0x2e, 0x00, 0xea, 0xda, 0xcf, 0xd4, 0xb9, 0x5a, 0x0c, 0x27, 0x18, 0x1a,
+            0x29, 0x99, 0xca, 0x83, 0xb5, 0x2a, 0x2d, 0xbf, 0x76, 0x42, 0x9e, 0xaf, 0x15, 0x74,
+            0x63, 0x66, 0x05, 0x36,
+        ];
+        assert_eq!(dig, expected_digest, "ML-DSA-65 deterministic signature bytes changed (KAT drift)");
+
+        // GREEN: pinned c̃ (challenge hash) exact bytes.
+        let expected_ctilde: [u8; 32] = [
+            0x46, 0x21, 0xcb, 0x4b, 0x48, 0x5a, 0xd2, 0x59, 0x8d, 0x19, 0x60, 0x99, 0x8e, 0x10,
+            0x88, 0x1b, 0x11, 0x4e, 0xc5, 0x38, 0xb3, 0x5a, 0xb7, 0x45, 0x42, 0x5f, 0xf8, 0x2a,
+            0x7e, 0x50, 0x24, 0xd0,
+        ];
+        assert_eq!(sig.c_t, expected_ctilde, "ML-DSA-65 c̃ (challenge) bytes changed");
+
+        // Second signing must reproduce identical bytes (determinism).
+        let sig2 = sign(&sk, msg, &rnd);
+        assert_eq!(pack_sig(&sig2.z, &sig2.h), sig_bytes, "signing non-deterministic for fixed (sk,msg,rnd)");
+    }
+
+    // RED: flipping one message byte MUST change the signature (proves the golden
+    // KAT is not a constant match independent of input).
+    #[test]
+    fn mldsa65_kat_red_msg_flip_changes_sig() {
+        let seed = [7u8; 32];
+        let (_pk, sk) = keygen(&seed);
+        let rnd = [0u8; 32];
+        let sig_a = pack_sig_of(&sk, b"probe", &rnd);
+        let sig_b = pack_sig_of(&sk, b"probf", &rnd); // last byte flipped 'e'->'f'
+        assert_ne!(sig_a, sig_b, "flipping a message byte did not change the signature (constant-match defect)");
+    }
+
+    // RED: different rnd nonce MUST change the signature.
+    #[test]
+    fn mldsa65_kat_red_nonce_changes_sig() {
+        let seed = [7u8; 32];
+        let (_pk, sk) = keygen(&seed);
+        let sig_a = pack_sig_of(&sk, b"probe", &[0u8; 32]);
+        let sig_b = pack_sig_of(&sk, b"probe", &[1u8; 32]);
+        assert_ne!(sig_a, sig_b, "different rnd nonce did not change the signature");
+    }
+
+    fn pack_sig_of(sk: &MlDsa65Sk, msg: &[u8], rnd: &[u8; 32]) -> Vec<u8> {
+        let s = sign(sk, msg, rnd);
+        pack_sig(&s.z, &s.h)
+    }
+
     #[test]
     fn sign_verify_roundtrip_and_tamper() {
         let seed = [7u8; 32];
