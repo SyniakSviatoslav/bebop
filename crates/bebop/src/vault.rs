@@ -312,27 +312,56 @@ pub fn lock(path: &str) -> Result<()> {
 mod tests {
     use super::*;
 
-    const PATH: &str = "/tmp/bebop-vault-test.json";
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    /// A unique temp path per call, cleaned up on Drop so parallel tests never
+    /// collide on a shared `/tmp/bebop-vault-test*.json` file.
+    struct TempPath(String);
+
+    impl TempPath {
+        fn new() -> Self {
+            let n = TEST_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let p = std::env::temp_dir().join(format!(
+                "bebop-vault-test-{}-{}.json",
+                std::process::id(),
+                n
+            ));
+            let s = p.to_string_lossy().into_owned();
+            let _ = fs::remove_file(&s);
+            TempPath(s)
+        }
+        fn as_str(&self) -> &str {
+            &self.0
+        }
+    }
+
+    impl Drop for TempPath {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+        }
+    }
 
     #[test]
     fn create_unlock_roundtrip() {
         // GREEN: create then unlock returns the SAME self-certifying id.
-        let _ = fs::remove_file(PATH);
-        let a = create_or_unlock("hunter2", PATH, true).unwrap();
+        let path = TempPath::new();
+        let path = path.as_str();
+        let a = create_or_unlock("hunter2", path, true).unwrap();
         assert!(a.self_certify());
-        let b = unlock("hunter2", PATH).unwrap();
+        let b = unlock("hunter2", path).unwrap();
         assert_eq!(a.id, b.id, "id not stable across unlock");
-        let _ = fs::remove_file(PATH);
     }
 
     #[test]
     fn wrong_passphrase_rejected() {
         // RED: a wrong passphrase must fail AEAD auth (never silently decrypt).
-        let _ = fs::remove_file(PATH);
-        let _ = create_or_unlock("right-pass", PATH, true).unwrap();
-        let res = unlock("wrong-pass", PATH);
+        let path = TempPath::new();
+        let path = path.as_str();
+        let _ = create_or_unlock("right-pass", path, true).unwrap();
+        let res = unlock("wrong-pass", path);
         assert!(res.is_err(), "wrong passphrase was accepted — catastrophic");
-        let _ = fs::remove_file(PATH);
     }
 
     #[test]
@@ -342,10 +371,10 @@ mod tests {
         // both produced identical (key, nonce) ⇒ identical ciphertext ⇒ XOR of
         // the two secret bundles leaks. A random per-vault salt + nonce makes the
         // ciphertext prefixes differ.
-        let p1 = "/tmp/bebop-vault-test-a.json";
-        let p2 = "/tmp/bebop-vault-test-b.json";
-        let _ = fs::remove_file(p1);
-        let _ = fs::remove_file(p2);
+        let tp1 = TempPath::new();
+        let tp2 = TempPath::new();
+        let p1 = tp1.as_str();
+        let p2 = tp2.as_str();
         let _ = create_or_unlock("same-pass", p1, true).unwrap();
         let _ = create_or_unlock("same-pass", p2, true).unwrap();
         let raw1 = fs::read(p1).unwrap();
@@ -354,8 +383,6 @@ mod tests {
             raw1, raw2,
             "same-pass vaults must differ (random salt+nonce)"
         );
-        let _ = fs::remove_file(p1);
-        let _ = fs::remove_file(p2);
     }
 
     #[test]
@@ -376,8 +403,9 @@ mod tests {
     fn hybrid_signature_is_red_green() {
         // RED+GREEN: a valid hybrid signature verifies; a wrong msg / truncated
         // sig fails. Proves BOTH PQ and classical halves are live and required.
-        let _ = fs::remove_file(PATH);
-        let id = create_or_unlock("sig-test", PATH, true).unwrap();
+        let path = TempPath::new();
+        let path = path.as_str();
+        let id = create_or_unlock("sig-test", path, true).unwrap();
         let msg = b"bebop node says hello";
         let sig = id.sign(msg);
         assert!(id.verify(msg, &sig), "valid hybrid sig rejected");
@@ -388,7 +416,6 @@ mod tests {
         );
         // RED: truncated sig → must fail (length gate)
         assert!(!id.verify(msg, &sig[..10]), "truncated sig accepted");
-        let _ = fs::remove_file(PATH);
     }
 
     #[test]
@@ -396,8 +423,9 @@ mod tests {
         // GREEN/RED: the public bundle must carry BOTH the PQ KEM pub
         // (ML-KEM-768 = 1184 bytes) AND the classical X25519 (32) + Ed25519 (32)
         // + PQ DSA pub (ML-DSA-65 = 1952). A bundle of only one half fails this.
-        let _ = fs::remove_file(PATH);
-        let id = create_or_unlock("hybrid", PATH, true).unwrap();
+        let path = TempPath::new();
+        let path = path.as_str();
+        let id = create_or_unlock("hybrid", path, true).unwrap();
         assert_eq!(
             id.public_key.len(),
             PQ_EK + PQ_SPK + X25519 + X25519,
@@ -408,6 +436,5 @@ mod tests {
             id.kem_roundtrip_ok(),
             "PQ KEM half failed to encapsulate/decapsulate"
         );
-        let _ = fs::remove_file(PATH);
     }
 }
