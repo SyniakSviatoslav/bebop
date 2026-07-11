@@ -1,184 +1,48 @@
-# AGENTS.md — Bebop
+# AGENTS.md — bebop2 operating rules (binding for every agent/lane)
 
-Bebop is a standalone AGPL-3.0 coding-agent CLI. Operating rules for any agent (Claude Code,
-Hermes, Codex, OpenCode, Aider, or Bebop itself) working in this repo.
+> Greenfield from-scratch PQ crypto + deterministic core. Zero-dependency, `no_std + alloc`.
+> These rules are standing orders; they override convenience and "it's probably fine".
 
-## Hard rules (from docs/RULES.md — non-negotiable)
-- **Constant Doubt**: no statement in docs is true unless backed by a live probe or a
-  deterministic test. Unverified = false. Ship the RED case alongside the GREEN.
-- **Verified-by-Math**: every behavior change ships with a falsifiable RED+GREEN test.
-- **Red lines** (per-change human gate, never auto-touch without confirmation): auth, money,
-  RLS/migrations, secrets, bulk edits.
+## 1. Three-model peer review (NEVER self-review) — "threelaterition"
+No agent may build AND certify its own work. Every non-trivial change goes through a 3-stage
+pipeline; the gate enforces it on commit (`.git/hooks/pre-commit` → `scripts/three-model-review.sh`):
 
-## Universal rule — First Principles Thinking (reason from physics + math, not from convention)
-- **Definition**: before adopting any architecture, library, or abstraction, derive it from
-  first principles — the irreducible physical/mathematical constraints it must satisfy — and
-  reject anything that cannot be traced back to one. "Everyone does it this way" is not a
-  derivation. Prefer the smallest construct that satisfies the constraints over the familiar one.
-- **Where it adds EV**: prevents cargo-cult architecture (e.g. pulling a 200-dep framework to do
-  what a 40-line deterministic function + a craft already does). Forces every module to justify
-  its existence at the constraint level, which is exactly where the AGC engineers operated: 2K RAM
-  and radiation tolerance left no room for convention.
-- **Where it does NOT add EV**: re-deriving settled physics from scratch to avoid a well-known
-  formula (use the proven result; derive only when the proven result does not fit the constraint).
-- **Coupling to this repo**: rust-core is the first-principles layer — graph-PDE spectral kernel,
-  VSA, vector algebra, all `#[no_mangle] extern "C"`, compiled to wasm with an EMPTY import section
-  (core-RE-loop proves it imports no clock/RNG/socket). Any new primitive must earn its place the
-  same way: a deterministic, dependency-free function over a verified state, no runtime RNG/Date.
+1. **BUILD**   — implementer writes + verifies the code (tests + build green). Does NOT self-certify.
+2. **REVIEW**  — a SECOND, independent agent reviews the diff for correctness/security.
+3. **OVERLAP** — a THIRD agent (≠ #1, ≠ #2) cross-checks the reviewer against spec/docs, catching
+                 shared blind spots where builder & reviewer both assume the same wrong thing.
 
-## Universal rule — Physicality as Truth (the hardware floor is the oracle)
-- **Definition**: physical constraints (energy, mass, radiation, clock, memory, band) are the
-  ground-truth oracle. A design is "correct" only relative to the physical envelope it must survive
-  in. When a doc/claim/number conflicts with a measurable physical fact, the physical fact wins and
-  the claim is corrected (never hand-waved). Numbers about real systems MUST be verified against
-  primary sources (datasheet / NASA NTRS / archival spec), not repeated from secondary summaries.
-- **Where it adds EV**: stops "infinite-resource" thinking. The AGC ran at 2.048 MHz quartz, 2K core
-  RAM, 36K core-rope ROM, under a radiation + weight + power envelope — and landed. Contrast: modern
-  stacks burn 1000× the silicon to do less, because they ignore the envelope. Bebop's kernel inherits
-  the envelope discipline: no RNG/clock/network in rust-core (determinism IS the safety model, same as
-  core-rope memory being unrewritable = un-corruptible in flight).
-- **Where it does NOT add EV**: invoking "Apollo did it lean" as a morale tale without changing the
-  code. Physicality as Truth is a verification standard, not a vibe — it must surface as a check
-  (e.g. core-RE-loop's empty-import check is the machine-code-level physicality gate: no imports ⇒ no
-  reachable clock/RNG/socket).
-- **Cross-link**: Physicality as Truth is the empirical half of Verified-by-Math. VbM asks "can it go
-  RED?"; Physicality asks "does it survive the envelope?". Both are falsifiable; both ship a gate.
+The §A.3.1 Poly1305 tag was "green" on a roundtrip test that reused the same broken path both ways —
+independence of the reviewer is the only reliable antidote. The commit is refused unless BOTH a
+distinct `reviewer` and a distinct `overlap` attestation exist, each with a non-empty findings
+summary. Builder = reviewer, or reviewer = overlap, fails the gate.
 
-## Universal rule — symmetrical loops (cycle consistency) wherever they add EV
-- **Definition**: a symmetrical loop = an invertible `Decompose → Reconstruct` pair over a
-  state snapshot `X`, asserting `Reconstruct(Decompose(X)) ≈ X` (i.e. `F(G(X)) == X`). The
-  residual `‖X − X̂‖` is the *symmetry gap*; its per-feature `rⱼ` localizes which module broke.
-- **Where it adds EV (use it)**: any function with a cheap, deterministic `Decompose/Reconstruct`
-  pair — state-delta round-trips, telemetry/feature-vector reconciliation, serialization
-  (encode/decode), config→effect→config, plan→state→plan (the "hallucination filter").
-  It automates regression, degradation, and property-based self-testing.
-- **Where it does NOT add EV (do NOT rely on it alone)**: semantic truth and hard red-line
-  boundaries. A symmetric-but-wrong map (`x→2x→x/2`) has gap 0 yet is wrong — see
-  `src/integration/analytics/cycle-consistency.test.ts` (RED blind-spot case). Pair every
-  loop with ≥1 ground-truth oracle for money/RLS/drone-physics/contract correctness.
-- **Implementation**: `src/integration/analytics/cycle-consistency.ts` (deterministic PCA
-  round-trip, no RNG/training). Proof + bounds in `docs/design/cycle-consistency-theorem.md`.
-- **Deployment**: flag-OFF by default; shadow (log drift) before gate (block). Never a
-  replacement for tests — a complement. Wire via `GovernorConfig.cycleConsistency`.
+Workflow (builder):
+```
+bash scripts/three-model-review.sh prepare <builder-id>
+# independent reviewer agent:
+bash scripts/three-model-review.sh attest reviewer <reviewer-agent> <findings.md>
+# independent overlap agent:
+bash scripts/three-model-review.sh attest overlap  <overlap-agent>  <findings.md>
+```
+CI may set `CI_THREE_MODEL_REVIEW=allow` only if it runs its own equivalent review job.
 
-## Universal rule — L5 Neuro-Symbolic Gate (advisor proposes, kernel decides)
-- **Definition**: any stochastic advisor (LLM / GNN / heuristic) is a *consultant* that PROPOSES an
-  authority + `predictedQuality`. The deterministic kernel (`Governor`) is the only actor that writes
-  `authority` to the actuator plane; a symbolic arbiter (`clamp`, factor-kill, resonance-cap,
-  safe-state floor, poison guard, cycle/PCA breach gate) sits between them and **mathematically
-  cannot emit an out-of-contract command**. See `docs/design/adr-003-neuro-symbolic-gate-2026-07-09.md`.
-  Plan-step validity is verified structurally via Logical CoT (PDDL-INSTRUCT, arXiv:2509.13351):
-  `src/integration/logicalCot.ts` proves each step's preconditions/effects/invariants before admission —
-  see `docs/design/adr-004-logical-cot-pddl-instruct-2026-07-09.md`.
-- **Where it adds EV**: stops advisor hallucinations from reaching actuators; the empirical proof the
-  gate works is `bridgeMetrics().hallucinationRate` (N7) — how often the kernel overrode the advisor.
-- **Where it does NOT add EV**: making the advisor "smarter" via runtime RLHF/PPO. Sovereign-core
-  forbids SGD/RNG/Date at runtime (air-gapped) — training is offline-only. A GNN advisor (N6) slots in
-  behind `GnnAdvisor` with **zero kernel change**; its proposals are gated by `dualTrackGate` against
-  the deterministic Truth Layer graph so a hallucinated edge/route is rejected (`no-such-edge`).
-- **Implementation**: `src/governor.ts` (gate) + `src/integration/analytics/dual-track.ts` (seam).
-  Causal blast-radius surfaced via `pointsOfFailure` (N4).
+## 2. Verified-by-Math (VbM) — only falsifiable proof validates
+A change is validated only if: (1) it works (exercised against reality), (2) it is proven with math
+(a deterministic assertion/count with a defined threshold), and (3) the proof is **falsifiable** —
+there exists an input under which it goes RED. Ship the RED case alongside the green. A test that
+cannot fail is a false-positive metric and does NOT validate. Enforced by
+`scripts/guardrail-falsifiable-proof.mjs` (pre-commit) and `scripts/verify-doc-claims.mjs`.
 
-## Universal rule — As-above-so-below checker (verify-then-admit at every scale)
-- **Definition**: the SAME fail-closed `Checker` abstraction that admits a command in the kernel
-  (`applyCommandChecked` in `kernel.ts`) recurs at every scale — kernel (decide/fold), agent
-  (copilot distinct-backend checker), plan (`logicalCot` step-wise logic auditor), tool-args
-  (`validate` boundary contract), draft (`speculate` guard-verifies). The primitive is always
-  *verify-then-admit, quarantine-on-failure*; the verifier is NEVER the same component that produced.
-- **Where it adds EV**: one uniform, auditable trust boundary instead of N ad-hoc checks; a violation
-  at any scale has the same shape and the same fail-closed semantics (localize → quarantine → re-plan).
-- **Where it does NOT add EV**: when the verifier and producer are collapsed into one component (defeats
-  independence). Enforce Cross-pattern B (propose-don't-execute) so the producer is always stochastic/
-  LLM and the verifier always deterministic/distinct.
-- **Implementation**: `kernel.ts applyCommandChecked` + `copilot.ts` + `logicalCot.ts` + `validate.ts`
-  + `speculate.ts`. See `docs/design/bebop-fundamental-principles-2026-07-09.md` (Cross-pattern A).
+## 3. Red-line areas need per-change confirmation
+auth / money / RLS / migrations / bulk-edit / crypto-constant changes are red-line. Don't silently
+ship them; flag for human confirmation.
 
-## Universal rule — Propose-don't-execute (stochastic layer never gets the actuator)
-- **Definition**: any stochastic/advisor component (LLM, GNN, heuristic) MAY propose/name an intent but
-  NEVER writes to the actuator plane. Execution is always a deterministic function over a verified state.
-  Concretely: advisor proposes → deterministic verifier checks → deterministic executor applies (or the
-  planner returns NO PATH when preconditions are unmet).
-- **Where it adds EV**: it is the single topology that makes every other safety property possible —
-  kernel (ADR-003), dual-track (N6), copilot, speculate, logicalCot, GOAP (N8c) all rely on it. A
-  hallucinated plan physically cannot act because the executor enumerates transitions, not the model.
-- **Where it does NOT add EV**: letting an LLM call a tool directly (bypassing the gate) — that collapses
-  to propose-and-execute and re-introduces the failure mode. Enforced by `guard.ts` + `loop.ts` GUARD GATE.
-- **Implementation**: see `src/kernel.ts` (advisor proposes, kernel decides), `src/integration/analytics/
-  dual-track.ts`, `src/copilot.ts`, `src/speculate.ts`, `src/integration/logicalCot.ts`,
-  `src/integration/analytics/goap.ts`. See principles doc (Cross-pattern B).
+## 4. Trust the failing test over the narrative
+When a test is red, the bug is real even if the code "looks right". Investigate with an independent
+oracle (e.g. a Python reference implementation) before concluding the test is wrong.
 
-## Universal rule — Flag-OFF → shadow → gate (no feature goes live silently)
-- **Definition**: every new analytic/integration is FLAG-OFF by default (inert unless a caller supplies
-  its cfg). Deployment ladder: OFF → **shadow** (run in background, log drift, no blocking) → **gate**
-  (block on breach) — and red-line actions are NEVER gated on a statistical loop alone.
-- **Where it adds EV**: bounds the blast radius of a wrong/unproven module; proves the false-positive rate
-  in shadow before any blocking. Matches the cycle-consistency theorem deployment (§6).
-- **Where it does NOT add EV**: gating a safety-critical/red-line action on a single statistical signal
-  (use the deterministic contract checks + a ground-truth oracle instead).
-- **Implementation**: 8 FLAG-OFF seams (cycle-consistency, ica, kalman, degradation, mesh, arch-mine,
-  field, active-inference, dual-track, logicalCot, redteam, modelGateway, multipilot, shadow, etc.). See principles doc
-  (Cross-pattern C).
-
-## Universal rule — Multipilot (brain-inside-brain, multidimensional verification)
-- **Definition**: for any agentic prompt (reasoning / review / reverse-engineering / research / planning),
-  run ≥3 INDEPENDENT verifier loops in parallel over the same artifact and overlay their verdicts as a
-  tensor (disagreement = dimension). One checker (copilot) is necessary but not sufficient; N≥3 independent
-  checkers catch the failure modes any single one blind-spots (cf. cycle-consistency's self-inverse blind
-  spot). The orchestrator promotes the artifact only when the overlay converges; divergence is surfaced
-  for human triage, never silently averaged away.
-- **Where it adds EV**: turns single-point review into a multidimensional integrity signal; each verifier
-  is a distinct axis (e.g. structural/logical, adversarial/red-team, oracle/truth), so a hallucination that
-  fools axis 1 is caught by axis 2 or 3. Default for ALL agentic surfaces.
-- **Where it does NOT add EV**: colluding checkers (same model/prompt) — independence is the whole point.
-  Each loop MUST differ in method or model; identical checkers add latency, not integrity.
-- **Implementation**: `src/integration/multipilot.ts` — `multipilot(artifact, loops[])` runs N independent
-  verifier fns, returns the per-axis verdicts + an `overlay` (converged / divergent) + a recommended action.
-  FLAG-OFF seam; composable with copilot/redteam/logicalCot. See principles doc (Cross-pattern + the
-  "tensor overlay" directive 2026-07-09).
-
-## Repo layout
-- `bin/bebop` — native Rust CLI entry (shim → `cargo run -p bebop`). Subcommands: boot, run,
-  agents, use, recall, route, map, diagrams, **docs**, mcp, self, init, dispatch, outfit, status.
-- `crates/bebop/` — the agent: guard OS, Rust/WASM kernel bridge (`rust-core` + `crates/core`),
-  living memory, governor, routing, backends, MCP server, skills/hooks, launch animation.
-- `rust-core/` — dependency-free graph-PDE field core (spectral heat-kernel, f32 CSR, SIMD128, WASM).
-- `archive/` — the former TypeScript layer (recoverable; no longer built or executed).
-- `docs/` — the in-repo wiki (features, integrations, diagrams, footage, narration).
-- `scripts/` — doc-claim + falsifiable-proof gates, diagram + footage generators.
-
-## Documentation pipeline (`bebop docs`)
-The polished, repeatable doc-release flow. Run before any main release:
-- `bebop docs build` — typecheck + tests + wasm + diagrams + map + i18n parity (no LLM needed).
-- `bebop docs check` — release-readiness audit (gifs resolve, manifests valid, version semver,
-  OpenWiki wired). Exits non-zero if anything is off.
-- `bebop docs init` / `bebop docs update` — generate/refresh the **OpenWiki** agent-facing wiki
-  in `openwiki/` (needs an LLM key: set `OPENWIKI_PROVIDER` + `OPENWIKI_API_KEY`).
-
-## Agent-facing wiki (OpenWiki)
-This repo uses [OpenWiki](https://github.com/langchain-ai/openwiki) to maintain a structured,
-agent-readable wiki under `openwiki/`. **When you need durable repo context that isn't in this
-file, consult `openwiki/` first** rather than re-deriving it. The wiki is regenerated on a daily
-CI schedule (`openwiki-update.yml`) and is kept in sync with `git` diffs — treat it as living
-documentation, not gospel; verify non-trivial claims against code.
-
-## Verify before claiming done
-- `cargo test` — 366 Rust tests (275 bebop + 19 bebop-core + 72 bebop2-core C8), RED+GREEN, 0 fail.
-- `cargo run -p bebop -- boot` — guard-OS self-certification (must go RED to be trusted).
-- After any doc change: `node scripts/verify-doc-claims.mjs` — doc claims must match live Rust code (pre-commit + CI).
-- `node scripts/guardrail-falsifiable-proof.mjs` — every #[test] must have a RED path (pre-commit + CI).
-- `npm run verify` — one-shot full gate (maps to cargo test + both gates).
-
-## Anti-hallucination discipline (agent + human)
-- **Re-read before acting on any summary.** A compaction summary, injected "prior context", or a
-  remembered file state is a HINT, never a source of truth. Before editing a file a summary claims
-  exists/changed, `read_file` it. Before trusting a count/state, run the command.
-- **Paste the REAL command output, never a recalled number.** "410 tests pass" comes from running
-  `npm test`, not memory. After editing, run `npm run verify` in the same turn and paste the output.
-- **Ship RED before GREEN.** Every load-bearing test needs a falsifiable (non-tautological) assertion;
-  `guardrail-falsifiable-proof.mjs` enforces this on every commit.
-- **A red gate is a red-line, not a TODO.** A stale doc count that trips `verify-doc-claims.mjs` is
-  fixed immediately, not deferred — a guardrail that is red-but-ignored teaches the system red is fine.
-- **Defer loudly.** Deferred work states WHY and the re-open condition, so it is neither silently
-  dropped nor silently claimed done.
-- **Don't over-claim wiring.** "verified" ≠ "wired into runtime". Flag-OFF / un-wired is explicit
-  (e.g. telemetry-ica-loop and the ICA→governor stage are proven but not live-promoted).
+## Build/test
+- `cargo test` — 371 Rust tests (275 bebop + 19 bebop-core + 77 bebop2-core), RED+GREEN, 0 fail
+- `cargo test -p bebop2-core` (full suite), `cargo clippy -p bebop2-core --all-targets`
+- Crypto KATs live in `bebop2/core/src/kat/`; RFC 8439 §2.5.2 + Appendix A.3 are the Poly1305 anchors.

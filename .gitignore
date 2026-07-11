@@ -46,3 +46,4 @@ dist/
 # pnpm lockfile (this repo is npm-based; package-lock.json is the source of truth)
 pnpm-lock.yaml
 pnpm-workspace.yaml
+.review/
