@@ -79,3 +79,38 @@ NO self-certification. NO merge-to-main without operator sign-off (red-line).
 - "post-quantum" label stays OFF until WS-1 (entropy) + F2 (ACVP) both green. Until then classical Ed25519 is the only load-bearing sig.
 - WS-2/WS-5 make proto-cap a *protocol* (canonical encoding + anchored trust); proto-wire confidentiality (F6) + iroh (F4 mesh) remain after.
 - Deleting README claims for absent `reloop/`/`kernel/`/`cli/` once WS-4 doc-truth scan lands counts as progress.
+
+---
+
+## 6. INTEGRATION COMPLETE — 2026-07-12 (operator waived sign-off; commit verified+tested)
+
+All 7 workstreams merged into `review/proto-crypto` and pushed to origin.
+
+- WS-1 entropy: pending (Wave 1 still running — notify on completion)
+- WS-2 TLV (F4): merged — kills serde_json on signed path
+- WS-3 numeric (Phase 0): merged — 7 numeric fixes
+- WS-4 CI-gate (F5): merged — deny.toml bans OpenSSL, cargo-audit+deny in CI
+- WS-5 AnchorRoster (F3): merged — kills self-issue auth bypass
+- WS-6 rustls (F6): merged — OpenSSL GONE (cargo tree -i openssl-sys: no match)
+- WS-7 channel binding (F7): merged — defeats cross-channel replay
+- WS-F2 ACVP (F2): merged — ML-DSA-65 60/60 NIST ACVP byte-exact
+
+**Final: 499 Rust tests pass, 0 fail (`cargo test --workspace`).**
+
+### Integration fixes applied during merge (real bugs, not cosmetic)
+1. `signed_frame.rs`: auto-merge produced a DUPLICATE `channel_binding` field
+   (compile error) — resolved to single field, union of WS-2 + WS-7 tests.
+2. `roster.rs` `Delegation::canonical_bytes`: WS-5 builder used `serde_json::to_vec`
+   on the SIGNED delegation path — a serde_json-on-signed-path regression that
+   violates ARCHITECTURE.md:75 / red-team §4A (the exact defect WS-2 was built to
+   kill). FIXED: now uses canonical TLV codec (`DOMAIN_DELEGATION` tag). serde_json
+   remains dev-only in proto-cap.
+3. README/AGENTS test-count: the doc-claim verifier requires EXACT match to
+   `cargo test --lib --workspace`; each merge shifted the total (411→430→436→499).
+   Set final = 499. NOTE: the verifier's own `cargo` invocation has a 300s timeout
+   that can truncate a COLD test build → false "test count mismatch" (saw 281 vs 416
+   flap). Warm the test build before committing on these heavy crypto worktrees.
+
+### Next (after WS-1 lands)
+- Merge WS-1 (entropy fail-closed) → final Phase 0 closure.
+- Then Phase 1–5 per blueprint. Red-team 3A/4A addressed; §2 (OpenSSL) KILLED.
