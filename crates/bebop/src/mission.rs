@@ -68,6 +68,61 @@ pub fn mission_summary(title: &str, lines: &[&str]) {
     println!();
 }
 
+/// A run trace — what happened during a mission, used to derive debrief badges.
+#[derive(Debug, Clone, Default)]
+pub struct Trace {
+    pub loop_count: u32,   // how many autonomously-run loops
+    pub bugs: u32,         // bugs hit
+    pub test_delta: i32,   // tests added − tests that broke (net quality)
+    pub rollback: bool,    // had to rewind / roll back
+    pub levelup: bool,     // crossed a milestone (new capability/category done)
+}
+
+/// Debrief badge — honest, falsifiable outcome of a mission.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Badge {
+    /// Shipped a Minimum Viable Product slice.
+    Mvp,
+    /// Hit the operator's single HIGHEST-priority goal this run.
+    Highest,
+    /// Crossed a level-up milestone (new capability / category completed).
+    LevelUp,
+    /// Degraded — rolled back / quality regressed; honest flag, no spin.
+    Degraded,
+}
+
+impl Badge {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Badge::Mvp => "MVP",
+            Badge::Highest => "HIGHEST",
+            Badge::LevelUp => "LEVEL-UP",
+            Badge::Degraded => "DEGRADED",
+        }
+    }
+}
+
+/// Derive the debrief badges from a run trace (honest, no flattery).
+pub fn debrief(t: &Trace) -> Vec<Badge> {
+    let mut out = Vec::new();
+    if t.loop_count > 0 && t.test_delta >= 0 && !t.rollback {
+        out.push(Badge::Mvp); // autonomous loops shipped without rollback
+    }
+    if t.levelup {
+        out.push(Badge::LevelUp);
+    }
+    if t.rollback || t.test_delta < 0 {
+        out.push(Badge::Degraded); // honest: something regressed
+    }
+    // HIGHEST is set by the operator's intent, not auto-derived here.
+    out
+}
+
+/// Mark a run as having hit the operator's HIGHEST-priority goal.
+pub fn highest_badge() -> Badge {
+    Badge::Highest
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,5 +144,36 @@ mod tests {
         assert_eq!(scene(3), scene(3));
         // and the ring wraps cleanly
         assert_eq!(scene(4), scene(0));
+    }
+
+    #[test]
+    fn debrief_mvp_when_loops_shipped_clean() {
+        // GREEN: autonomous loops + non-negative test delta + no rollback → MVP.
+        let t = Trace { loop_count: 3, bugs: 0, test_delta: 2, rollback: false, levelup: false };
+        let b = debrief(&t);
+        assert!(b.contains(&Badge::Mvp));
+        assert!(!b.contains(&Badge::Degraded));
+    }
+
+    #[test]
+    fn debrief_degraded_on_rollback() {
+        // GREEN (honest): a rollback always yields DEGRADED, never spun as success.
+        let t = Trace { loop_count: 1, bugs: 2, test_delta: -1, rollback: true, levelup: false };
+        let b = debrief(&t);
+        assert!(b.contains(&Badge::Degraded));
+        assert!(!b.contains(&Badge::Mvp));
+    }
+
+    #[test]
+    fn debrief_levelup_flag() {
+        // GREEN: levelup set → LEVEL-UP badge present.
+        let t = Trace { loop_count: 0, bugs: 0, test_delta: 0, rollback: false, levelup: true };
+        assert!(debrief(&t).contains(&Badge::LevelUp));
+    }
+
+    #[test]
+    fn highest_badge_is_explicit() {
+        // GREEN: HIGHEST is operator-intent, returned by its own constructor.
+        assert_eq!(highest_badge(), Badge::Highest);
     }
 }
