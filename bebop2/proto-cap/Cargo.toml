@@ -10,12 +10,17 @@ description = "A (authorization) — bebop2 protocol library line. Per-frame sig
 # marked TODO pending the pack/unpack API — see signed_frame.rs / hybrid_gate.rs).
 bebop2-core = { path = "../core", default-features = false, features = ["std"] }
 
-# `serde` is the ONLY third-party dep, used purely to canonicalize the capability
-# struct for signing (no externally-tagged/envelope fields that could vary by RUSTC
-# version in a way that breaks cross-version verification). Reachable offline.
+# `serde` is retained ONLY for out-of-band *transport framing* in proto-wire
+# (serializing the whole SignedFrame envelope to the carrier). It is NEVER on the
+# signing path: signatures commit to a fixed-layout TLV ([`bebop_proto_cap::tlv`]),
+# in direct compliance with ARCHITECTURE.md:75 (no serde on the signed path) and
+# red-team §4A. `serde_json` has been removed entirely — it was the non-canonical
+# signing defect.
 serde = { version = "1", features = ["derive"] }
-# JSON canonicalization of capabilities / frames (deterministic field order).
-serde_json = "1"
 
+# `serde_json` is a *dev-only* dependency, used solely by the regression test
+# `tlv::tests::serde_json_is_non_canonical_red` to PROVE the defect the TLV codec
+# fixes (serde_json is implementation-defined, not canonical: float formatting and
+# map key ordering diverge across versions). It is NOT used on the signing path.
 [dev-dependencies]
-# none.
+serde_json = "1"

@@ -32,6 +32,7 @@ pub mod error;
 pub mod hybrid_gate;
 pub mod scope;
 pub mod signed_frame;
+pub mod tlv;
 
 /// A signed capability authorises exactly one action on one resource for one
 /// key, bounded by a nonce/expiry. NOT a bearer token, NOT a score.

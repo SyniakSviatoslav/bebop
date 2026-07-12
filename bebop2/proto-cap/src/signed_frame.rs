@@ -1,14 +1,17 @@
 //! Signed frame — a frame carrying its own capability + signature(s).
 //!
 //! A [`SignedFrame`] binds a capability (authorizing an action on a resource by a
-//! key, until a nonce/expiry) to the frame payload via a signature over
-//! `(capability_canonical_bytes || payload)`. Because the signature covers the
-//! capability, the frame cannot be replayed on a different payload/scope/nonce.
+//! key, until a nonce/expiry) to the frame payload via a signature over a
+//! **canonical TLV signing input** (`signing_domain`). Because the signature
+//! covers the capability, the frame cannot be replayed on a different
+//! payload/scope/nonce.
 //!
-//! # Signing — REAL, not faked
+//! # Signing — REAL, not faked, and now CANONICAL
 //! The **classical leg** is signed with `bebop2-core::sign` Ed25519 (RFC 8032,
-//! from scratch, zero-dep). This is a genuine signature: `verify` returns `false`
-//! on tamper, and the round-trip test asserts that.
+//! from scratch, zero-dep). The signature commits to `signing_domain()`, which is
+//! a **fixed-layout, domain-separated TLV** ([`crate::tlv`]) — NOT serde_json.
+//! This satisfies `ARCHITECTURE.md:75` (no serde on the signed path) and closes
+//! red-team finding §4A (signatures were previously over non-canonical JSON).
 //!
 //! The **post-quantum leg** is ML-DSA-65 in `bebop2-core::pq_dsa`. It is NOT yet
 //! wired here because that module exposes its keys/signature as private structs
@@ -18,6 +21,14 @@
 //! signature. This is the honest "TODO with exact call shape" the protocol review
 //! gate requires.
 //!
+//! # Channel binding (F7)
+//! An optional `channel_binding: Option<[u8;32]>` carries the SHA3-256 handshake
+//! transcript hash. When set, it is encoded as a TLV field tagged
+//! `FIELD_CHANNEL_BINDING` inside the frame's signing domain, binding the
+//! signature to the specific authenticated channel. `None` leaves the field
+//! absent. (The handshake module that *produces* the transcript hash is a
+//! separate F7 task; this crate only encodes/signs the supplied binding.)
+//!
 //! CI GUARD: NO-COURIER-SCORING — a frame binds action+resource+key only. No
 //! score, no trust accumulation, no reputation ledger.
 
@@ -26,6 +37,16 @@ use serde::{Deserialize, Serialize};
 use crate::capability::Capability;
 use crate::error::{CapError, CapResult};
 use crate::hybrid_gate::HybridGate;
+use crate::tlv::{tlv_signing_input, DOMAIN_SIGNED_FRAME, FIELD_CHANNEL_BINDING};
+
+/// Field ids for the `SignedFrame` TLV. Ascending; pinned (part of the contract).
+const FID_CAPABILITY: [u8; 1] = [0x01];
+const FID_PAYLOAD: [u8; 1] = [0x02];
+
+/// Struct tag for `SignedFrame` in the TLV header.
+const STRUCT_TAG_SIGNED_FRAME: u8 = 0x01;
+/// Wire version of the `SignedFrame` TLV schema.
+const WIRE_VERSION_SIGNED_FRAME: u8 = 0x01;
 
 /// A frame that carries its own signed capability. Neutral transport payload —
 /// the `payload` bytes are opaque to authorization.
@@ -35,6 +56,11 @@ pub struct SignedFrame {
     pub capability: Capability,
     /// Opaque, carrier-neutral payload (the route/ledger/delivery intent bytes).
     pub payload: Vec<u8>,
+    /// Optional channel-binding transcript hash (F7). When `Some`, the frame's
+    /// signature also commits to this 32-byte handshake hash, binding the frame
+    /// to a specific authenticated channel. Encoded as a TLV field tagged
+    /// `FIELD_CHANNEL_BINDING`; `None` omits the field.
+    pub channel_binding: Option<[u8; 32]>,
     /// Ed25519 signature (64 bytes) over `signing_domain()`. Stored as `Vec<u8>`
     /// because serde's derive only auto-implements arrays up to length 32; the
     /// byte length is fixed at 64 by `bebop2_core::sign`.
@@ -50,24 +76,52 @@ impl SignedFrame {
         SignedFrame {
             capability,
             payload,
+            channel_binding: None,
             classical_sig: None,
             pq_sig: None,
         }
     }
 
-    /// The exact bytes a signature commits to: `capability_canonical || payload`.
-    /// Any change to the capability (scope/nonce/expiry/subject) or the payload
-    /// invalidates the signature.
+    /// The exact bytes a signature commits to: a **fixed-layout, domain-separated
+    /// TLV** encoding of `(capability_tlv || payload [|| channel_binding])`.
+    ///
+    /// Layout: `DOMAIN_SIGNED_FRAME || struct_tag || wire_version || field_count`
+    /// then per field `FID || u32_le(len) || bytes`:
+    /// - `0x01` capability — the full `Capability::canonical_bytes_tlv()`
+    /// - `0x02` payload   — the opaque frame payload
+    /// - `0xFF` channel_binding (only if `channel_binding.is_some()`)
+    ///
+    /// The domain tag makes a frame signature and a capability signature live in
+    /// disjoint signing spaces even if their field bytes coincided — cross-structure
+    /// signature reuse is cryptographically rejected.
+    ///
+    /// **No serde.** This is hand-built TLV; `serde_json` is never on the signing
+    /// path (ARCHITECTURE.md:75, red-team §4A).
     pub fn signing_domain(&self) -> CapResult<Vec<u8>> {
-        let mut buf = self.capability.canonical_bytes()?;
-        buf.extend_from_slice(&self.payload);
-        Ok(buf)
+        let cap_tlv = self.capability.canonical_bytes_tlv();
+
+        let mut fields: Vec<(&[u8], &[u8])> = Vec::with_capacity(3);
+        fields.push((&FID_CAPABILITY, &cap_tlv[..]));
+        fields.push((&FID_PAYLOAD, &self.payload[..]));
+        // Channel binding is the highest field id by construction (0xFF); the
+        // codec sorts defensively so order here is canonical regardless.
+        if let Some(binding) = &self.channel_binding {
+            fields.push((&[FIELD_CHANNEL_BINDING], &binding[..]));
+        }
+
+        Ok(tlv_signing_input(
+            DOMAIN_SIGNED_FRAME,
+            STRUCT_TAG_SIGNED_FRAME,
+            WIRE_VERSION_SIGNED_FRAME,
+            &fields,
+        ))
     }
 
     /// Sign this frame with the classical (Ed25519) key derived from `seed`.
     /// `seed` is the 32-byte Ed25519 seed (see `bebop2-core::sign::keygen`).
     ///
-    /// This produces a REAL Ed25519 signature; tampering fails verification.
+    /// This produces a REAL Ed25519 signature over the canonical TLV signing
+    /// domain; tampering fails verification.
     pub fn sign_classical(&mut self, seed: &[u8; 32]) -> CapResult<()> {
         let msg = self.signing_domain()?;
         let sig: [u8; 64] = bebop2_core::sign::sign(seed, &msg);
@@ -140,6 +194,7 @@ impl SignedFrame {
 mod tests {
     use super::*;
     use crate::scope::{Action, Resource};
+    use crate::tlv::DOMAIN_CAPABILITY;
 
     #[test]
     fn sign_verify_roundtrip_real_ed25519() {
@@ -191,5 +246,57 @@ mod tests {
             Err(CapError::HybridIncomplete)
         ));
         assert!(frame.pq_sig.is_none(), "pq_sig must stay None (not faked)");
+    }
+
+    #[test]
+    fn channel_binding_is_signed_into_domain() {
+        let seed = [3u8; 32];
+        let (pk, _) = bebop2_core::sign::keygen(&seed);
+        let cap = Capability::new(pk, Resource::Route, Action::Send, [5u8; 8], 777);
+        let mut frame = SignedFrame::new(cap, b"bound".to_vec());
+        let binding = [0xCAu8; 32];
+        frame.channel_binding = Some(binding);
+
+        // signing domain must contain the channel-binding field.
+        let domain = frame.signing_domain().unwrap();
+        // field_count is byte 18; with binding present it is 3, absent it is 2.
+        assert_eq!(domain[18], 3, "channel_binding adds a field");
+
+        frame.sign_classical(&seed).unwrap();
+        assert!(frame.verify_classical().is_ok(), "bound frame verifies");
+
+        // Tampering with the binding after signing must break verification.
+        let mut tampered = frame.clone();
+        tampered.channel_binding = Some([0xDBu8; 32]);
+        assert!(
+            tampered.verify_classical().is_err(),
+            "channel-binding tamper must fail"
+        );
+    }
+
+    #[test]
+    fn signing_domain_is_tlv_not_serde() {
+        // The signing domain must NOT be serde_json: it must start with the
+        // SignedFrame domain tag and carry the capability domain tag nested
+        // inside, and be byte-identical on re-derivation.
+        let seed = [8u8; 32];
+        let (pk, _) = bebop2_core::sign::keygen(&seed);
+        let cap = Capability::new(pk, Resource::Ledger, Action::Read, [4u8; 8], 321);
+        let frame = SignedFrame::new(cap, b"canonical".to_vec());
+        let a = frame.signing_domain().unwrap();
+        let b = frame.signing_domain().unwrap();
+        assert_eq!(a, b, "signing domain must be deterministic");
+        assert_eq!(
+            &a[0..16],
+            DOMAIN_SIGNED_FRAME,
+            "must be TLV with frame domain tag"
+        );
+        // Contains the nested capability domain tag somewhere.
+        assert!(
+            a.windows(16).any(|w| w == DOMAIN_CAPABILITY),
+            "capability TLV (with its own domain tag) must be nested"
+        );
+        // serde_json would produce a '{' first; TLV does not.
+        assert_ne!(a[0], b'{');
     }
 }
