@@ -67,8 +67,10 @@ pub mod sealfb; // SEAL closed-loop: field energy → self-tightened tolerance
 pub mod stabilizer; // inherent Lyapunov stability: V̇≤0 monitor, saturation, potential well, ground state
 pub mod stress; // 3-level stress benchmark (injection / double-bind / telemetry)
 pub mod svc; // space-vector control smoothing (αβ trajectory, damping)
+pub mod telemetry; // A: host resource telemetry (Linux /proc, zero-dep)
 pub mod termux; // K: Termux/Kali dual-use (recon-manual + explicit dual_use opt-in + vuln gate)
 pub mod tui; // the ratatui TUI: red-spaceship launch + interactive frame
+pub mod panels; // D/E/H TUI panels: scoreboard / minimap / drift / spark
 pub mod vault; // XChaCha20 + scrypt encrypted memory vault (deterministic key deriv)
 pub mod wavefield; // geometric + wave sim of the CONNECTION GRAPH (geometry, waves, cycles, divergence)
 pub mod wiring; // 3-layer runtime: field sim ↔ L5 stabilizer ↔ living memory ↔ project gating
