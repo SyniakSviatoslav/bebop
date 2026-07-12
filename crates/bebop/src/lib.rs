@@ -46,6 +46,10 @@ pub mod changes; // Q: Hermes-style change/action record (key-changes visibility
 pub mod drift; // GLOBAL RULE: systems-thinking / architecture drift detector (configurable, CLI flag)
 pub mod settings; // Q: settings dictionary (self-service; agent turns knobs per user request)
 pub mod lanes; // O: parallel-session scheduler (throughput/auto-queue/ETA)
+pub mod extensions; // F: user rules/hooks/loops/gates/prompts (fail-closed TOML)
+pub mod voice; // G: native offline voice (whisper.cpp listen + espeak-ng/piper speak)
+pub mod policy; // N: default policies N1/N2/N3 (auto-structure/parallel/descartes)
+pub mod descartes; // N3: Cartesian-square 2x2 comparison (exact pros/cons)
 pub mod pddl; // deterministic STRIPS-style planner + chain-of-thought trace
 pub mod pod; // POD: pseudonymous Proof-of-Delivery (Princess Pi attribution, audit 29157)
 pub mod portkey; // deterministic local transport / gateway abstraction (pub-sub bus)
