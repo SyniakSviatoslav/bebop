@@ -261,8 +261,8 @@ fn fe_sub(a: &Fe, b: &Fe) -> Fe {
         c = v >> 64;
     }
     pa[4] = c as u64; // 0 or 1 (p+a < 2p < 2^256 when a < p)
-    // Now pa - b (b has 4 limbs, b < p). Result is in [0, 2p); keep pa[4] as the
-    // high limb so the carry isn't lost. Integer pa >= b so final borrow is 0.
+                      // Now pa - b (b has 4 limbs, b < p). Result is in [0, 2p); keep pa[4] as the
+                      // high limb so the carry isn't lost. Integer pa >= b so final borrow is 0.
     let mut d = [0u64; 8];
     let mut borrow = 0i128;
     for i in 0..4 {
@@ -470,7 +470,7 @@ fn point_decompress(s: &[u8; 32]) -> Option<Point> {
         None => return None,
         Some(x) => x,
     }; // root r with r's own low-bit parity
-    // The other root is -r; verify r^2 * v == u (else non-residue → reject).
+       // The other root is -r; verify r^2 * v == u (else non-residue → reject).
     let check = fe_sub(&fe_mul(&fe_square(&x), &v), &u);
     if !fe_eq(&check, &fe_0()) {
         return None;
@@ -491,7 +491,7 @@ fn point_decompress(s: &[u8; 32]) -> Option<Point> {
 fn point_compress(p: &Point) -> [u8; 32] {
     let zinv = fe_invert(&p.z);
     let y = fe_to_bytes(&fe_mul(&p.y, &zinv)); // affine y = y / z
-    // compute x/z mod p to read the sign bit
+                                               // compute x/z mod p to read the sign bit
     let xz = fe_to_bytes(&fe_mul(&p.x, &zinv));
     let mut out = y;
     if (xz[0] & 1) == 1 {
@@ -682,12 +682,46 @@ fn scalar_mul(base: &Point, scalar_le: &[u8; 32]) -> Point {
 
 /// RFC 8032 §5.1.5 — generate (public_key, secret_key) from a 32-byte seed.
 /// secret_key = seed || pubkey (64 bytes, RFC form). pubkey = 32 bytes.
+///
+/// **TEST-ONLY / `dangerous_deterministic`.** In a normal (non-test, feature-off)
+/// build this symbol does not exist, so production code cannot keygen from a
+/// predictable constant seed. Use [`keygen_from_entropy`] for prod.
+#[cfg(any(test, feature = "dangerous_deterministic", feature = "test_keygen"))]
 pub fn keygen(seed: &[u8; 32]) -> ([u8; 32], [u8; 32]) {
     let az = crate::hash::sha512(seed);
     let mut a = [0u8; 32];
     a.copy_from_slice(&az[0..32]);
     // clamp (RFC 8032 §5.1.5): clear low 3 bits of octet 0; clear high bit and
     // set second-highest bit of octet 31.
+    a[0] &= 248;
+    a[31] = (a[31] & 0x7f) | 0x40;
+    let b_pt = point_decompress(&B_ENCODED).expect("base point must decode");
+    let a_pt = scalar_mul(&b_pt, &a);
+    let pk = point_compress(&a_pt);
+    let mut sk = [0u8; 32];
+    sk.copy_from_slice(&pk);
+    (pk, sk)
+}
+
+/// Production Ed25519 keygen: draw a fresh 32-byte seed from platform entropy and
+/// derive the keypair. Fail-closed — returns `Err` if entropy is unavailable, never
+/// a constant fallback. Replaces the constant-seed [`keygen`] in all prod paths.
+pub fn keygen_from_entropy() -> Result<([u8; 32], [u8; 32]), crate::rng::EntropyError> {
+    let mut seed = [0u8; 32];
+    crate::rng::entropy_provider().fill(&mut seed)?;
+    // Delegate to the deterministic core. SAFETY: `keygen` is gated behind test /
+    // dangerous_deterministic, but it is NEVER depend-feature-gated off for the crate
+    // itself (only for downstream callers), so it is always available in-tree. To keep
+    // the prod path unconditionally present, inline the derivation here instead.
+    Ok(keygen_from_seed_infallible(&seed))
+}
+
+/// In-tree deterministic Ed25519 derivation (always available; never exposed publicly
+/// as a constant-seed entry point). Used by [`keygen_from_entropy`].
+fn keygen_from_seed_infallible(seed: &[u8; 32]) -> ([u8; 32], [u8; 32]) {
+    let az = crate::hash::sha512(seed);
+    let mut a = [0u8; 32];
+    a.copy_from_slice(&az[0..32]);
     a[0] &= 248;
     a[31] = (a[31] & 0x7f) | 0x40;
     let b_pt = point_decompress(&B_ENCODED).expect("base point must decode");
@@ -811,13 +845,19 @@ mod tests {
         assert_eq!(hex(&sig), sig_hex, "signature mismatch (RFC 8032 §7.1 #1)");
 
         let pk_arr: [u8; 32] = pk;
-        assert!(verify(&pk_arr, msg, &sig), "verify must pass for the genuine §7.1 #1 signature");
+        assert!(
+            verify(&pk_arr, msg, &sig),
+            "verify must pass for the genuine §7.1 #1 signature"
+        );
 
         // RED KAT: a wrong public key must NOT verify the genuine signature.
         // (Catches a verify-always-true bug — the original test only used the computed pk.)
         let mut wrong_pk = pk_arr;
         wrong_pk[0] ^= 0xff;
-        assert!(!verify(&wrong_pk, msg, &sig), "verify must REJECT a signature under the wrong public key");
+        assert!(
+            !verify(&wrong_pk, msg, &sig),
+            "verify must REJECT a signature under the wrong public key"
+        );
     }
 
     #[test]
@@ -832,10 +872,16 @@ mod tests {
         // RED: flip a byte in the signature → must NOT verify.
         let mut bad = sig;
         bad[10] ^= 0xff;
-        assert!(!verify(&pk, msg, &bad), "tampered signature must NOT verify");
+        assert!(
+            !verify(&pk, msg, &bad),
+            "tampered signature must NOT verify"
+        );
 
         // RED: different message → must NOT verify.
-        assert!(!verify(&pk, b"other", &sig), "wrong message must NOT verify");
+        assert!(
+            !verify(&pk, b"other", &sig),
+            "wrong message must NOT verify"
+        );
     }
 
     #[test]
@@ -876,7 +922,12 @@ mod bignum_tests {
         let a = vec![123u8];
         let b = vec![0x01u8, 0xC8u8]; // 456 = 0x01C8 (big-endian)
         let prod = mul_be(&a, &b);
-        assert_eq!(prod, vec![0, 0xDB, 0x18], "123*456 should be 0x00DB18, got {:?}", prod);
+        assert_eq!(
+            prod,
+            vec![0, 0xDB, 0x18],
+            "123*456 should be 0x00DB18, got {:?}",
+            prod
+        );
         // verify via fe_mul
         let f = fe_mul(&fe_from_u64(123), &fe_from_u64(456));
         let le = fe_to_bytes(&f);

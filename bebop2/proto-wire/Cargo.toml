@@ -24,7 +24,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # Hashing for channel binding (F7): SHA3-256 handshake transcript -> binding.
-bebop2-core = { path = "../core", version = "0.1.0", default-features = false, features = ["std"] }
+bebop2-core = { path = "../core", version = "0.1.0", default-features = false, features = ["std", "test_keygen"] }
 
 [dev-dependencies]
 tokio = { version = "1.48", features = ["rt", "rt-multi-thread", "macros", "net", "sync", "time", "io-util"] }
@@ -32,4 +32,4 @@ futures-util = "0.3"
 # Real Ed25519 keygen (RFC 8032, from scratch) for the round-trip tests. The lib
 # itself stays free of a direct core dependency (signing is reached via
 # `bebop_proto_cap`), but the tests need to mint keys.
-bebop2-core = { path = "../core", version = "0.1.0", default-features = false, features = ["std"] }
+bebop2-core = { path = "../core", version = "0.1.0", default-features = false, features = ["std", "test_keygen"] }

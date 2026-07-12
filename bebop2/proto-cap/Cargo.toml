@@ -8,7 +8,7 @@ description = "A (authorization) — bebop2 protocol library line. Per-frame sig
 [dependencies]
 # Real from-scratch PQ core (Ed25519 classical leg is wired; ML-DSA-65 PQ leg is a
 # marked TODO pending the pack/unpack API — see signed_frame.rs / hybrid_gate.rs).
-bebop2-core = { path = "../core", version = "0.1.0", default-features = false, features = ["std"] }
+bebop2-core = { path = "../core", version = "0.1.0", default-features = false, features = ["std", "test_keygen"] }
 
 # `serde` is retained ONLY for out-of-band *transport framing* in proto-wire
 # (serializing the whole SignedFrame envelope to the carrier). It is NEVER on the

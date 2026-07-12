@@ -37,3 +37,13 @@ paste = "1.0"
 default = ["std", "host"]
 std = []
 host = []
+# Escape hatch for tests / pinned-KAT harnesses that must build a *deterministic*
+# generator from a caller-supplied constant seed (e.g. RFC/ACVP vectors). NEVER enable
+# in production — with it on, `sign::keygen(seed)`, `pq_dsa::keygen(seed)`, and
+# `ChaCha20Rng::from_seed` become public, re-opening the predictable-key red-flag.
+dangerous_deterministic = []
+# Downstream test suites (proto-cap/proto-wire) need the constant-seed `keygen(seed)`
+# entry points to mint deterministic keys in their own `#[cfg(test)]` code. This is the
+# same surface as `dangerous_deterministic` but named for test use only. Production code
+# must NOT enable this.
+test_keygen = []

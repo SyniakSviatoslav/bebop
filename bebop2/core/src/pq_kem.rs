@@ -51,12 +51,30 @@
 
 const KECCAK_ROUNDS: usize = 24;
 const RC: [u64; 24] = [
-    0x0000000000000001, 0x0000000000008082, 0x800000000000808a, 0x8000000080008000,
-    0x000000000000808b, 0x0000000080000001, 0x8000000080008081, 0x8000000000008009,
-    0x000000000000008a, 0x0000000000000088, 0x0000000080008009, 0x000000008000000a,
-    0x000000008000808b, 0x800000000000008b, 0x8000000000008089, 0x8000000000008003,
-    0x8000000000008002, 0x8000000000000080, 0x000000000000800a, 0x800000008000000a,
-    0x8000000080008081, 0x8000000000008080, 0x0000000080000001, 0x8000000080008008,
+    0x0000000000000001,
+    0x0000000000008082,
+    0x800000000000808a,
+    0x8000000080008000,
+    0x000000000000808b,
+    0x0000000080000001,
+    0x8000000080008081,
+    0x8000000000008009,
+    0x000000000000008a,
+    0x0000000000000088,
+    0x0000000080008009,
+    0x000000008000000a,
+    0x000000008000808b,
+    0x800000000000008b,
+    0x8000000000008089,
+    0x8000000000008003,
+    0x8000000000008002,
+    0x8000000000000080,
+    0x000000000000800a,
+    0x800000008000000a,
+    0x8000000080008081,
+    0x8000000000008080,
+    0x0000000080000001,
+    0x8000000080008008,
 ];
 // rho/pi rotation amounts (index i in 0..24 -> rotation count).
 const RHO: [u32; 24] = [
@@ -121,7 +139,13 @@ struct Keccak {
 
 impl Keccak {
     fn new(rate: usize) -> Self {
-        Keccak { st: [0; 25], block: [0; 200], pos: 0, rate, squeezing: false }
+        Keccak {
+            st: [0; 25],
+            block: [0; 200],
+            pos: 0,
+            rate,
+            squeezing: false,
+        }
     }
     fn absorb(&mut self, data: &[u8]) {
         let mut i = 0;
@@ -239,7 +263,11 @@ const DV: usize = 4;
 #[inline]
 fn red<T: Into<i64>>(x: T) -> i32 {
     let r = x.into() % (Q as i64);
-    if r < 0 { (r + Q as i64) as i32 } else { r as i32 }
+    if r < 0 {
+        (r + Q as i64) as i32
+    } else {
+        r as i32
+    }
 }
 #[inline]
 fn poly_add(a: &[i32; N], b: &[i32; N]) -> [i32; N] {
@@ -612,6 +640,18 @@ pub fn keygen<F: FnMut(&mut [u8])>(rng: &mut F) -> (MlKem768Ek, MlKem768Dk) {
     keygen_internal(&d, &z)
 }
 
+/// Production ML-KEM-768 keygen: draw the full entropy requirement (a fresh `d` and
+/// `z`, each 32 bytes) from platform entropy and derive the keypair. Fail-closed —
+/// returns `Err` if entropy is unavailable, never a constant fallback. Replaces the
+/// caller-supplied-rng [`keygen`] in all prod paths.
+pub fn keygen_from_entropy() -> Result<(MlKem768Ek, MlKem768Dk), crate::rng::EntropyError> {
+    let mut d = [0u8; 32];
+    let mut z = [0u8; 32];
+    crate::rng::entropy_provider().fill(&mut d)?;
+    crate::rng::entropy_provider().fill(&mut z)?;
+    Ok(keygen_internal(&d, &z))
+}
+
 /// ML-KEM.Encaps_internal (Algorithm 17).
 pub fn encaps_internal(ek: &[u8; KEM768_EK_LEN], m: &[u8; 32]) -> (SharedSecret, MlKem768Ct) {
     let hek = sha3_256(ek);
@@ -632,7 +672,10 @@ pub fn encaps_internal(ek: &[u8; KEM768_EK_LEN], m: &[u8; 32]) -> (SharedSecret,
 /// ML-KEM.Encaps (Algorithm 20) — `m` is a FRESH 32-byte ephemeral seed drawn from
 /// `rng` on every call (B8: keystream/nonce reuse impossible — each call consumes a
 /// unique 32 bytes from the caller stream; `r` and `K` are derived from it via G).
-pub fn encaps<F: FnMut(&mut [u8])>(ek: &[u8; KEM768_EK_LEN], rng: &mut F) -> (SharedSecret, MlKem768Ct) {
+pub fn encaps<F: FnMut(&mut [u8])>(
+    ek: &[u8; KEM768_EK_LEN],
+    rng: &mut F,
+) -> (SharedSecret, MlKem768Ct) {
     let mut m = [0u8; 32];
     rng(&mut m);
     encaps_internal(ek, &m)
@@ -680,7 +723,9 @@ mod tests {
 
     // Small deterministic PRNG so tests need no OS entropy (constraint 3).
     fn lcg(state: &mut u64) -> u8 {
-        *state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        *state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         (*state >> 33) as u8
     }
     fn lcg_fill(state: &mut u64, buf: &mut [u8]) {
@@ -704,10 +749,16 @@ mod tests {
         );
         let mut s128 = [0u8; 32];
         shake128(&[], &mut s128);
-        assert_eq!(s128, hex::<32>("7f9c2ba4e88f827d616045507605853ed73b8093f6efbc88eb1a6eacfa66ef26"));
+        assert_eq!(
+            s128,
+            hex::<32>("7f9c2ba4e88f827d616045507605853ed73b8093f6efbc88eb1a6eacfa66ef26")
+        );
         let mut s256 = [0u8; 32];
         shake256(&[], &mut s256);
-        assert_eq!(s256, hex::<32>("46b9dd2b0ba88d13233b3feb743eeb243fcd52ea62b81b82b50c27646ed5762f"));
+        assert_eq!(
+            s256,
+            hex::<32>("46b9dd2b0ba88d13233b3feb743eeb243fcd52ea62b81b82b50c27646ed5762f")
+        );
     }
 
     // ── NTT round-trip + multiplication correctness (schoolbook reference) ──────
@@ -887,7 +938,10 @@ mod tests {
             let pos = (trial * 37) % KEM768_CT_LEN;
             ct_bad[pos] ^= 0xFF;
             let ss_bad = decaps(&dk, &ct_bad);
-            assert_ne!(ss_bad, ss, "tampered ciphertext decoded to same K (trial {trial})");
+            assert_ne!(
+                ss_bad, ss,
+                "tampered ciphertext decoded to same K (trial {trial})"
+            );
         }
     }
 
@@ -908,7 +962,10 @@ mod tests {
         lcg_fill(&mut st, &mut m2);
         let (_, ct1) = encaps_internal(&ek, &m1);
         let (_, ct2) = encaps_internal(&ek, &m2);
-        assert_ne!(ct1, ct2, "different ephemeral seeds produced identical ciphertext");
+        assert_ne!(
+            ct1, ct2,
+            "different ephemeral seeds produced identical ciphertext"
+        );
     }
 
     // Parse a hex string literal into a fixed array (test helper).

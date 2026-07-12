@@ -982,6 +982,16 @@ pub fn keygen(seed: &[u8; SEEDBYTES]) -> (MlDsa65Pk, MlDsa65Sk) {
     (MlDsa65Pk { bytes: pk }, MlDsa65Sk { bytes: sk })
 }
 
+/// Production ML-DSA-65 keygen: draw a fresh 32-byte seed from the platform entropy
+/// provider and derive the keypair. Fail-closed — returns `Err` if entropy is
+/// unavailable, never a constant fallback. Replaces the constant-seed [`keygen`]
+/// on all prod paths.
+pub fn keygen_from_entropy() -> Result<(MlDsa65Pk, MlDsa65Sk), crate::rng::EntropyError> {
+    let mut seed = [0u8; SEEDBYTES];
+    crate::rng::entropy_provider().fill(&mut seed)?;
+    Ok(keygen(&seed))
+}
+
 /// Sign (internal interface, deterministic-capable via rnd; rnd=0 → FIPS deterministic mode).
 pub fn sign(sk: &MlDsa65Sk, msg: &[u8], rnd: &[u8; RNDBYTES]) -> MlDsa65Sig {
     MlDsa65Sig {
