@@ -14,7 +14,7 @@ operator or a designated user) fills the `Resolution` field.
 - Never delete an `OPEN` entry to make the gate green.
 
 <!-- LOGIC-GATE:OPEN-ITEMS (regenerated each run; do not edit by hand) -->
-## Open escalations (13) — human arbiter required
+## Open escalations (16) — human arbiter required
 
 - **ESC-b259452574aa** [unbacked] `README.md:38` — - **Narration + looks** — `bebop init` picks a voice (bebop / plain / sarcastic / corporate-killer)
   - Arbiter: operator · Status: OPEN
@@ -39,6 +39,12 @@ operator or a designated user) fills the `Resolution` field.
 - **ESC-01f19461a247** [unbacked] `docs/design/LOGIC-LAWS.md:324` —   exhibits a *named, detectable* fallacy (§17) or asserts a causal link on
   - Arbiter: operator · Status: OPEN
 - **ESC-00163551ec3b** [unbacked] `docs/design/LOGIC-LAWS.md:325` —   mere correlation — same grounding path as §4/§9/§10–§14.
+  - Arbiter: operator · Status: OPEN
+- **ESC-4e5e02ac58eb** [unbacked] `docs/design/LOGIC-LAWS.md:383` —   asserts style-adaptation or prompt-expansion *correctness* without a
+  - Arbiter: operator · Status: OPEN
+- **ESC-1c5fe99a6ae3** [unbacked] `docs/design/LOGIC-LAWS.md:384` —   ground (e.g. "adapts to every user" unbacked).
+  - Arbiter: operator · Status: OPEN
+- **ESC-63eb279423bc** [unbacked] `docs/design/LOGIC-LAWS.md:389` —   perfectly (subjective), so it relies on the agent's own §17 self-
   - Arbiter: operator · Status: OPEN
 - **ESC-9f594d9df384** [unbacked] `bebop2/README.md:3` — > Greenfield rebuild of bebop. NOT a refactor of `crates/bebop` — a parallel implementation
   - Arbiter: operator · Status: OPEN

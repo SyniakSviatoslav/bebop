@@ -48,7 +48,7 @@ const CANON = [
 ].map((p) => join(ROOT, p)).filter(existsSync);
 
 // --- 3. Patterns -------------------------------------------------------------
-const CLAIM_RE = /(verified|proven|proves?|satisfies|guarantees|ensures|post-quantum claim|byte-exact|RED[→\-]>GREEN|kills?|eliminat|is (true|correct|secure|safe|canonical|consistent|reproducible|accessible|usable|honest|falsifiable)|no (serde|openssl)|claimed|asserts|sound|fact|semantic version|conventional commit|testing pyramid|feedback loop|causes?|implies?|therefore|thus|leads to|proves that|correlation)/i;
+const CLAIM_RE = /(verified|proven|proves?|satisfies|guarantees|ensures|post-quantum claim|byte-exact|RED[→\-]>GREEN|kills?|eliminat|is (true|correct|secure|safe|canonical|consistent|reproducible|accessible|usable|honest|falsifiable)|no (serde|openssl)|claimed|asserts|sound|fact|semantic version|conventional commit|testing pyramid|feedback loop|causes?|implies?|therefore|thus|leads to|proves that|correlation|adapts to (every|all|any) user|always (right|correct)|flawless|perfect|knows best)/i;
 const GROUND_RE = /(\.(rs|mjs|js|json|toml|wasm)|\[[^\]]+\]\(|#\[test\]|test |proof|KAT|ACVP|NIST|per (ARCHITECTURE|RED-TEAM|ROADMAP|LOGIC-LAWS)|source:|Stanford|Britannica|Aristotle|Leibniz|Wikipedia|cargo test|github\.com)/i;
 const NEG_RE = /\b(not|never|no longer|does ?n'?t|isn'?t|is not|cannot|eliminated|removed|killed|gone|absent|false)\b/i;
 const POS_RE = /\b(is|are|does|verified|satisfies|proven|ensures|guarantees|present|enabled|true|correct|secure|canonical)\b/i;
