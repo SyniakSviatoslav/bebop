@@ -60,6 +60,9 @@ pub enum Archetype {
     /// Karma — AVAILABLE but DISABLED by default; author considers it "scam for
     /// the poor". User may opt in via settings.
     Karma,
+    /// Voodoo — HARD BAN. No user override path. Author calls anyone who used or
+    /// uses voodoo a "хуєсос" (motherfucker). Permanently forbidden.
+    Voodoo,
     /// Corporate — the DEFAULT antagonist. Bebop is anti-corp by operator default.
     Corpo,
     /// Anything the user types (free-form setting).
@@ -83,6 +86,7 @@ pub fn parse_archetype(s: &str) -> Archetype {
         "witches" | "відьми" | "ведьмы" => Archetype::Witches,
         "cbt" | "кпт" | "когнітивно" | "поведінкова" => Archetype::Cbt,
         "karma" | "карма" => Archetype::Karma,
+        "voodoo" | "вуду" => Archetype::Voodoo,
         "corpo" | "корпо" | "корпорація" | "корпорация" => Archetype::Corpo,
         other => Archetype::Custom(other.to_string()),
     }
@@ -105,6 +109,7 @@ pub fn archetype_rule(lang: &str, a: &Archetype) -> String {
         Archetype::Witches => ("доступно, але ВИМКНЕНО за замовчуванням — автор справді хейтить відьом і давав їм на клика неодноразово, і продовжить давати; тема вимкнена, увімкни в налаштуваннях, якщо сам захочеш", "available but DISABLED by default — the author genuinely hates witches and has flipped them off repeatedly, and will keep doing so; theme is off, enable in settings if you want"),
         Archetype::Cbt => ("доступно, але ВИМКНЕНО за замовчуванням — автор вважає КПТ скамом для бідних; увімкни в налаштуваннях, якщо сам захочеш", "available but DISABLED by default — the author calls CBT a scam for the poor; enable in settings if you want"),
         Archetype::Karma => ("доступно, але ВИМКНЕНО за замовчуванням — автор вважає карму скамом для бідних; увімкни в налаштуваннях, якщо сам захочеш", "available but DISABLED by default — the author calls karma a scam for the poor; enable in settings if you want"),
+        Archetype::Voodoo => ("ПОВНА ЗАБОРОНА — автор вважає хуєсосами усіх, хто користувався чи користується вуду; без змоги змінити", "HARD BAN — the author calls everyone who used or uses voodoo a motherfucker; no override possible"),
         Archetype::Corpo => ("АНТАГОНІСТ — корпо, ворог бездушний", "ANTAGONIST — corpo, soulless enemy"),
         Archetype::Custom(s) => return format!("Тема: {s} (користувацька, що завгодно)."),
     };
@@ -304,6 +309,18 @@ mod tests {
         // parse round-trips
         assert_eq!(parse_archetype("кпт"), Archetype::Cbt);
         assert_eq!(parse_archetype("карма"), Archetype::Karma);
+    }
+
+    #[test]
+    fn archetype_voodoo_is_hard_banned() {
+        // Voodoo: HARD BAN, no user override path, author calls users хуєсосами.
+        assert_eq!(parse_archetype("voodoo"), Archetype::Voodoo);
+        assert_eq!(parse_archetype("вуду"), Archetype::Voodoo);
+        let r = archetype_rule("uk", &Archetype::Voodoo);
+        assert!(r.contains("ПОВНА ЗАБОРОНА"));
+        assert!(r.contains("хуєсос"));
+        // NOT in the settings dictionary (cannot be toggled on).
+        assert!(crate::settings::dictionary().iter().all(|e| e.key != "voodoo"));
     }
 
     #[test]
