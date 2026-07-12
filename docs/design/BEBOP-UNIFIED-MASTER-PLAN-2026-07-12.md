@@ -41,6 +41,11 @@ N. **NEW default policies (this revision):**
      possible (default ON, changeable).
    - N3. DESCARTES-SQUARE auto-comparison (exact pros / exact cons) for:
      proposed changes, research, analysis, library loading (default ON, changeable).
+O. **LANES (parallel session scheduler) — NEW this revision:**
+   Parallel sessions are called **lanes**. Each lane has measurable THROUGHPUT
+   (tasks/min it clears), an AUTO-QUEUE (incoming work is enqueued + dispatched
+   to the freest lane), and a RUN-TIME / ETA per task. Default ON, fully
+   configurable (see O1–O3). Shown in the helm as a live lanes panel.
 
 ---
 
@@ -62,6 +67,7 @@ N. **NEW default policies (this revision):**
 | L | Settings+attrib.   | all toggles + thank-you + authors         | `customize::Profile` + `ATTRIBUTIONS.md` | 11 |
 | M | Vuln/audit gates   | pre-int + periodic scan                   | reuse `ci-supply-chain.sh` logic    | 12    |
 | N | Default policies   | N1 structure/max-EV, N2 parallel, N3 sq | `policy.rs` (new) + `descartes.rs`  | 13    |
+| O | Lanes (scheduler) | throughput/auto-queue/run-time ETA panel | `lanes.rs` (new) + `tui` panel     | 14    |
 
 ### A. Drift / regression telemetry
 Extend `tui::Telemetry` with `drift: Vec<f64>`, `regression: Vec<bool>`,
@@ -150,7 +156,29 @@ functions; the orchestrator (parent) honors N2 when dispatching.
 
 ---
 
-## 2. Parallel execution plan (worktrees off CURRENT HEAD, verify-before-merge)
+### O. Lanes (parallel session scheduler) — NEW
+New `lanes.rs` + a `tui` panel (live lanes view). A **lane** = one parallel
+session/worker. Properties, all configurable in `Profile [lanes]` (default ON):
+
+- **THROUGHPUT**: tasks/min the lane clears, measured live from completed work
+  (reuses `enrich::Trace` duration + `Telemetry.cost`). Shown as a sparkline.
+- **AUTO-QUEUE**: incoming work (from N1 auto-structure, or operator prompts)
+  is enqueued centrally; the dispatcher assigns each item to the FREEST lane
+  (max throughput headroom). No manual lane-picking required.
+- **RUN-TIME / ETA**: per-task elapsed + predicted finish (EMA of prior same-size
+  tasks). Shown per lane + per queued item.
+- **LIVE PANEL** in the helm: one row per lane → name, status (idle/running/
+  draining), throughput spark, current task + ETA, queue depth.
+- Config (`Profile [lanes]`): `enabled=true`, `max_lanes=N` (default = cores),
+  `auto_queue=true`, `show_eta=true`, `policy="freest"|"round-robin"|"pinned"`.
+- This execution's Wave model (≤3 concurrent, disjoint file ownership) IS the
+  lanes policy in action — the orchestrator honors `max_lanes` + auto-queue when
+  dispatching subagents.
+
+RED→GREEN: RED — dispatching more than `max_lanes` concurrently must error/
+refuse; GREEN — auto-queue routes 3 items to the 3 freest lanes + ETA shown.
+
+## 2. Parallel execution plan (lanes off CURRENT HEAD, verify-before-merge)
 
 Base for every worktree = `origin/feat/logic-governance` (current HEAD
 `1b94031`) — NOT a stale base (lesson: stale base deletes governance files).
@@ -179,6 +207,8 @@ Final: after each wave merges, parent runs `cargo test --workspace` + law-hooks
 - leveling stored as living-memory nodes (anti-clutter; not git-metadata, not json).
 - dual-use Termux tools = package-manager entries only; never auto-scan; wormgpt opt-in.
 - N1/N2/N3 default ON, all changeable in settings.
+- O (Lanes): throughput/auto-queue/ETA panel; `max_lanes` default = cores;
+  `policy` freest|round-robin|pinned; default ON, fully configurable.
 
 ## 4. Verification gates (each category)
 
