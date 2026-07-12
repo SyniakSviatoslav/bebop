@@ -66,6 +66,9 @@ pub const DOMAIN_CAPABILITY: [u8; 16] = *b"bebop2 cap v1\0\0\0";
 /// Domain tag for [`crate::signed_frame::SignedFrame`].
 pub const DOMAIN_SIGNED_FRAME: [u8; 16] = *b"bebop2 framev1\0\0";
 
+/// Domain tag for [`crate::roster::Delegation`].
+pub const DOMAIN_DELEGATION: [u8; 16] = *b"bebop2 delegv1\0\0";
+
 /// Build the canonical signing input for a signed struct.
 ///
 /// Layout (big-endian lengths are little-endian `u32`):

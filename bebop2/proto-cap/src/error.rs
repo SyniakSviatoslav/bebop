@@ -23,12 +23,27 @@ pub enum CapError {
     NonceRejected,
     /// The capability is past its expiry.
     Expired,
-    /// The capability references a resource/action outside the scope enum.
-    ScopeViolation,
     /// Cannot (de)serialize the capability for canonical signing.
     Encode,
     /// The signature or key buffer had the wrong length.
     BadLength,
+    /// The root issuer of a delegation chain is NOT an enrolled trust anchor
+    /// (kills the self-issue auth-bypass: a subject cannot mint authority by
+    /// signing its own delegation).
+    UnknownIssuer,
+    /// A delegation link does not chain: `issued_by` of a link is not the
+    /// `subject` of the preceding link.
+    ChainBroken,
+    /// The requested effect / scope is not a subset of the tail link's scope.
+    /// Makes the previously-dead `ScopeViolation` gate live: attenuation is
+    /// enforced, not just enumerated.
+    ScopeViolation,
+    /// The tail of the delegation chain does not bind to the capability's
+    /// `subject_key`.
+    SubjectMismatch,
+    /// A delegation link's Ed25519 signature failed to verify against its
+    /// `issued_by` issuer key.
+    BadSignature,
 }
 
 impl fmt::Display for CapError {
@@ -41,9 +56,13 @@ impl fmt::Display for CapError {
             }
             CapError::NonceRejected => "capability nonce rejected (replay or invalid)",
             CapError::Expired => "capability expired",
-            CapError::ScopeViolation => "capability references a resource/action outside scope",
             CapError::Encode => "capability (de)serialization failed",
             CapError::BadLength => "signature or key buffer had the wrong length",
+            CapError::UnknownIssuer => "delegation chain root issuer is not an enrolled trust anchor",
+            CapError::ChainBroken => "delegation link does not chain to its parent",
+            CapError::ScopeViolation => "requested effect is not a subset of the granted scope",
+            CapError::SubjectMismatch => "delegation chain tail does not bind to the capability subject",
+            CapError::BadSignature => "delegation link signature failed to verify",
         };
         f.write_str(s)
     }
