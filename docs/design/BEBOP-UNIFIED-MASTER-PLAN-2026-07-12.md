@@ -304,3 +304,31 @@ per N3). Reverse-engineered + integrated:
 - P auto-intent, O lanes, R gender, memory/knowledge (SimpleMem reverse), agent_loop (LOOP).
 - Focus research: OpenScience/CasaOS/SimpleMem + OpenManus/Loop Engineering (docs + minimal code).
 
+### MASTER PLAN COMPLETE — all categories A–O DONE + verified (589 tests, 2026-07-12)
+
+Executed under full autopilot (operator: "finish master plan, give you all permissions,
+run on autopilot"). Every category below is backed by RED+GREEN Rust `#[test]` and passes
+`cargo test --workspace` (589 pass, 0 fail) + doc-claim gate + falsifiable-proof guardrail.
+
+| Cat | Module | What shipped | Wave |
+|-----|--------|--------------|------|
+| A | `telemetry.rs` | Host resource telemetry (Linux /proc meminfo+loadavg, zero-dep, degrades off-Linux) | D |
+| B | `customize.rs` | Mode axis (plan/build/auto, default Auto=autopilot) + looks/narration/patrons/gender | C |
+| C | `mission.rs` | Debrief badges MVP / HIGHEST / LEVEL-UP / DEGRADED (honest, no flattery) + rewind | C |
+| D | `panels.rs` | Scoreboard (mem gauge + KPI) panel content | D |
+| E | `panels.rs` | Minimap (ASCII connection-graph node grid) panel content | D |
+| F | `extensions.rs` | User rules/hooks/loops/gates/prompts — fail-closed TOML loader (`~/.bebop/extensions`) | A |
+| G | `voice.rs` | Native offline voice: whisper.cpp listen + espeak-ng/piper speak, graceful disable | A |
+| H | `panels.rs` | Drift panel (honest no-drift / lists drift hits) | D |
+| J | `collections.rs` | Library collections: list/add/rm/rename/snapshot/share/install (dual-use gated) | B |
+| K | `termux.rs` | Termux/Kali dual-use: recon-manual + explicit `--dual-use` opt-in + vuln gate | B |
+| L | `attrib/ATTRIBUTIONS.md` | Honest prior-art table (Hermes/CasaOS/SimpleMem/OpenManus/Descartes/Active Inference) | C |
+| N | `policy.rs` + `descartes.rs` | Default policies N1/N2/N3 + Cartesian-square 2×2 comparison | A |
+| O | `lanes.rs` | Parallel-session scheduler: dispatch/throughput/auto-queue/ETA + Scheduler wrapper | B |
+
+Categories already present pre-master-plan (identity Q/R/P, memory, agent_loop, drift,
+field, multipilot, vault, TUI launch) were verified green and left intact. No new
+dependencies were introduced in any wave (AGENTS.md: no new dep if avoidable — `/proc`
+telemetry instead of `sysinfo`; String panel builders instead of ratatui lifetime gymnastics).
+
+
