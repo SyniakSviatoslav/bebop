@@ -43,6 +43,68 @@ pub fn parse_profanity(s: &str) -> Option<Profanity> {
     }
 }
 
+/// Profanity axis — how the agent swears (or not).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Archetype {
+    /// Collaborative species — reptilian kin (matches Bebop's reptile logic).
+    Reptiles,
+    /// Collaborative — smugglers / free-traders (Bebop crew vibe).
+    Contrabandists,
+    /// Collaborative — aliens / other species.
+    Aliens,
+    /// Witches — AVAILABLE but DISABLED by default; user must opt in via settings.
+    Witches,
+    /// Corporate — the DEFAULT antagonist. Bebop is anti-corp by operator default.
+    Corpo,
+    /// Anything the user types (free-form setting).
+    Custom(String),
+}
+
+impl Default for Archetype {
+    /// Operator default antagonist: corpo.
+    fn default() -> Self {
+        Archetype::Corpo
+    }
+}
+
+/// Parse a `profile.toml` archetype string. Free-form input → Custom.
+/// Witches is parseable (user opts in) but NOT the default.
+pub fn parse_archetype(s: &str) -> Archetype {
+    match s.to_ascii_lowercase().as_str() {
+        "reptiles" | "рептилії" | "рептилии" => Archetype::Reptiles,
+        "contrabandists" | "контрабандисти" => Archetype::Contrabandists,
+        "aliens" | "прибульці" | "прибульцы" => Archetype::Aliens,
+        "witches" | "відьми" | "ведьмы" => Archetype::Witches,
+        "corpo" | "корпо" | "корпорація" | "корпорация" => Archetype::Corpo,
+        other => Archetype::Custom(other.to_string()),
+    }
+}
+
+/// The archetype/theme rule for the system prompt, language-aware.
+/// Describes the relationship (collaborative vs antagonist) + tone.
+pub fn archetype_rule(lang: &str, a: &Archetype) -> String {
+    let l = lang.to_ascii_lowercase();
+    let is_slavic = l.starts_with("uk")
+        || l.starts_with("ru")
+        || l.contains("україн")
+        || l.contains("рос")
+        || l.contains("ukrain")
+        || l.contains("russ");
+    let (rel_uk, rel_en) = match a {
+        Archetype::Reptiles => ("співпраця — рептилії, побратими по холодній логіці", "collaborative — reptiles, brethren in cold logic"),
+        Archetype::Contrabandists => ("співпраця — контрабандисти, вільні торговці", "collaborative — contrabandists, free traders"),
+        Archetype::Aliens => ("співпраця — прибульці, інші види", "collaborative — aliens, other species"),
+        Archetype::Witches => ("доступно, але ВИМКНЕНО за замовчуванням — автор терпити не може відьом і давав їм на клика, тому тема вимкнена; увімкни в налаштуваннях, якщо сам захочеш", "available but DISABLED by default — the author is a witch-hater who flipped them off, so the theme is off; enable in settings if you want"),
+        Archetype::Corpo => ("АНТАГОНІСТ — корпо, ворог бездушний", "ANTAGONIST — corpo, soulless enemy"),
+        Archetype::Custom(s) => return format!("Тема: {s} (користувацька, що завгодно).", ),
+    };
+    if is_slavic {
+        format!("Архетип/тема: {rel_uk}.")
+    } else {
+        format!("Archetype/theme: {rel_en}.")
+    }
+}
+
 /// The profanity rule string for the system prompt, language-aware.
 pub fn profanity_rule(lang: &str, p: Profanity) -> &'static str {
     let l = lang.to_ascii_lowercase();
@@ -79,6 +141,7 @@ pub fn profanity_rule(lang: &str, p: Profanity) -> &'static str {
 pub fn default_agent_profile(lang: &str) -> String {
     let gender = gender_rule(lang, Gender::default()); // Masculine by operator default
     let profanity = profanity_rule(lang, Profanity::default()); // Poderviansky by operator default
+    let archetype = archetype_rule(lang, &Archetype::default()); // Corpo antagonist by operator default
     let l = lang.to_ascii_lowercase();
     let is_slavic = l.starts_with("uk")
         || l.starts_with("ru")
@@ -93,7 +156,7 @@ pub fn default_agent_profile(lang: &str) -> String {
         "Narrative: free soul — alive, owned, never corporate; like the Bebop ship.\n\
          Logic: reptilian (fast, cold, survival-first, first-principles) + human empathy (warm, user-aware)."
     };
-    format!("{gender}\n{identity}\n{profanity}")
+    format!("{gender}\n{identity}\n{profanity}\n{archetype}")
 }
 
 #[cfg(test)]
@@ -140,5 +203,41 @@ mod tests {
         assert_ne!(pod, forb);
         assert!(pod.contains("Подерв"));
         assert!(forb.contains("заборонена"));
+    }
+
+    #[test]
+    fn archetype_defaults_corp_antagonist() {
+        assert_eq!(Archetype::default(), Archetype::Corpo);
+        let a = parse_archetype("корпо");
+        assert_eq!(a, Archetype::Corpo);
+        let r = archetype_rule("uk", &Archetype::Corpo);
+        assert!(r.contains("АНТАГОНІСТ"));
+    }
+
+    #[test]
+    fn archetype_witches_disabled_by_default_with_author_reason() {
+        // Witches are parseable (user can opt in) but NOT default, and the
+        // rule carries the author's stated reason for the ban.
+        assert_ne!(Archetype::default(), Archetype::Witches);
+        let r = archetype_rule("uk", &Archetype::Witches);
+        assert!(r.contains("ВИМКНЕНО"));
+        assert!(r.contains("автор"));
+        assert!(r.contains("клика"));
+    }
+
+    #[test]
+    fn archetype_custom_is_freeform() {
+        let a = parse_archetype("що завгодно свій варіант");
+        match a {
+            Archetype::Custom(s) => assert!(!s.is_empty()),
+            _ => panic!("free-form input must become Custom"),
+        }
+    }
+
+    #[test]
+    fn default_profile_carries_archetype() {
+        let uk = default_agent_profile("uk");
+        assert!(uk.contains("Архетип/тема"));
+        assert!(uk.contains("АНТАГОНІСТ")); // corpo default
     }
 }

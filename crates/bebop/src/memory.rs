@@ -14,6 +14,11 @@ pub struct MemoryNode {
     pub concept: String,
     pub payload: String,
     pub layer: Layer,
+    /// SimpleMem-style multi-view metadata (offline: no external embedder).
+    /// entities/topic/salience let retrieval + consolidation reason beyond bag-of-bytes.
+    pub entities: Vec<String>,
+    pub topic: String,
+    pub salience: f64,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -50,6 +55,35 @@ impl LivingMemory {
                 concept: concept.into(),
                 payload: payload.into(),
                 layer: Layer::Short,
+                entities: Vec::new(),
+                topic: String::new(),
+                salience: 0.0,
+            },
+        );
+        id
+    }
+
+    /// Remember with SimpleMem-style multi-view metadata (entities/topic/salience).
+    /// Offline: metadata is caller-supplied, no external embedder involved.
+    pub fn remember_meta(
+        &mut self,
+        concept: &str,
+        payload: &str,
+        entities: Vec<String>,
+        topic: &str,
+        salience: f64,
+    ) -> String {
+        let id = format!("{:08x}", simple_hash(concept.as_bytes()));
+        self.nodes.insert(
+            id.clone(),
+            MemoryNode {
+                id: id.clone(),
+                concept: concept.into(),
+                payload: payload.into(),
+                layer: Layer::Short,
+                entities,
+                topic: topic.into(),
+                salience,
             },
         );
         id
@@ -67,6 +101,12 @@ impl LivingMemory {
     /// Read-only access to the stored nodes (used by the knowledge retriever).
     pub fn nodes(&self) -> &std::collections::HashMap<String, MemoryNode> {
         &self.nodes
+    }
+
+    /// Mutable access to the stored nodes (used by consolidation to promote
+    /// abstract parents into the `Long` layer).
+    pub fn nodes_mut(&mut self) -> &mut std::collections::HashMap<String, MemoryNode> {
+        &mut self.nodes
     }
 
     /// Read-only access to the cold-tier attic (evicted-but-preserved nodes).

@@ -215,4 +215,50 @@ Final: after each wave merges, parent runs `cargo test --workspace` + law-hooks
 RED→GREEN per category (e.g. scoreboard shows 0 for empty trace; debrief panics
 on missing history → GREEN prints all 4 badges; voice absent binary → graceful
 disable; collections vuln scan blocks bad lib but --force overrides). Full
-`cargo test --workspace` must stay green (currently 502 + new tests).
+`cargo test --workspace` must stay green (currently 525 — up from 502).
+
+---
+
+## 5. Identity axes + agent self-config (IMPLEMENTED — commit 47461d2 + this wave)
+
+Bebop's default agent identity + user-configurable axes, all in
+`crates/bebop/src/agent_profile.rs` (+ `gender.rs`, `customize.rs`). Language-aware.
+
+| Axis | Default | Options | Module |
+|------|---------|---------|--------|
+| Narrative / style | **free soul** | free soul | `agent_profile::default_agent_profile` |
+| Gender | **Masculine** | Masculine / Feminine / Neutral | `gender::Gender` (BAN "товариш"→"побратим") |
+| Logic | **reptilian + human empathy** | (fixed blend) | `agent_profile` |
+| Profanity | **Poderviansky** (Лесь Подерв'янський, max absurdist mat) | dosed / forbidden / poderviansky | `agent_profile::Profanity` |
+| Archetype | **Corpo (ANTAGONIST)** | Reptiles / Contrabandists / Aliens / Witches(disabled-by-default) / Corpo / Custom(anything) | `agent_profile::Archetype` |
+
+- Witches axis: AVAILABLE but DISABLED by default — operator is a witch-hater who
+  "flipped them off"; user enables via settings if wanted. Reason encoded in `archetype_rule`.
+- All axes configurable; `default_agent_profile(lang)` seeds the system prompt.
+- `customize::Profile.gender` + `resolve_gender()` wired; `pub mod agent_profile/gender`
+  in `lib.rs`.
+
+## 6. Focus research: OpenScience · CasaOS · SimpleMem (S) — IMPLEMENTED ПВМЛА upgrade
+
+Research doc: `BEBOP-FOCUS-OPENSCIENCE-CASAOS-SIMPLEMEM-2026-07-12.md` (Descartes-square
+per N3). Reverse-engineered + integrated:
+
+- **SimpleMem** → ПВМЛА upgrade (OFFLINE, deterministic, NO OpenAI):
+  - `memory::remember_meta()` — multi-view metadata (entities/topic/salience).
+  - `knowledge::consolidate()` — groups nodes by cosine ≥ τ_cluster into abstract
+    `Long`-layer parent (NON-DESTRUCTIVE: children kept). RED+GREEN tested.
+  - `knowledge::adaptive_recall()` — query-complexity (entropy) → k∈[3,20]. RED+GREEN tested.
+  - Used local `cosine`/`simple_hash`; did NOT pull LanceDB/OpenAI (offline invariant).
+- **CasaOS** → validates category K (Collections): manifest + one-click + local registry.
+  Adopted as benchmark; `coll` CLI semantics aligned.
+- **OpenScience/OSF** → validates operator policy (memory-first, push-plans-first,
+  content-addressed `agentic_git`). No new code; cited as provenance precedent.
+
+## 7. Remaining (not yet implemented)
+
+- **Q** — key changes/actions visibility (Hermes-style) + destructive/critical changes
+  display in CLI + settings dictionary for agent self-service.
+- **Wave 1 re-do** — F `extensions.rs` · G `voice.rs` · C `mission.rs` debrief+rewind
+  (subagents failed: broken+uncommitted; redo with isolated worktrees + verify-before-merge).
+- Wire `Archetype`/`Profanity`/`Gender` into `customize::Profile` TOML parse + `bebop outfit`.
+- Expose identity axes in the helm TUI panel.
