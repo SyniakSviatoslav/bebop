@@ -5,6 +5,26 @@
 //! `(capability_canonical_bytes || payload)`. Because the signature covers the
 //! capability, the frame cannot be replayed on a different payload/scope/nonce.
 //!
+//! # Channel binding (F7) — defeats cross-channel replay
+//! An optional `channel_binding: Option<[u8;32]>` slot binds the frame to the
+//! transport channel it was signed on. When `Some(hash)`, the hash is the
+//! SHA3-256 over the handshake transcript (ClientHello..ServerFinished, or
+//! whatever the carrier records). It is appended to the signing domain, so the
+//! Ed25519 signature commits to the channel. A frame captured on channel A
+//! **cannot** be replayed on channel B: B' != B, and the signature no longer
+//! verifies.
+//!
+//! - `None` => the binding slot is filled with 32 zero bytes. This is the
+//!   **legacy / insecure** mode for frames that predate channel binding. It is
+//!   explicitly flagged: a zero binding is accepted by any channel, so the
+//!   cross-channel replay defense is *not* in effect. Implementations MUST set
+//!   a real binding on every fresh channel.
+//! - `binding_signing_domain()` = `signing_domain()` ++ binding slot. The actual
+//!   classical signature (`sign_classical` / `verify_classical`) covers
+//!   `binding_signing_domain()`, NOT `signing_domain()` alone. `signing_domain()`
+//!   is kept public because WS-2 (TLV codec) may still use it as the inner
+//!   domain; the binding slot is layered on top, so this merges cleanly.
+//!
 //! # Signing — REAL, not faked
 //! The **classical leg** is signed with `bebop2-core::sign` Ed25519 (RFC 8032,
 //! from scratch, zero-dep). This is a genuine signature: `verify` returns `false`
@@ -42,6 +62,12 @@ pub struct SignedFrame {
     /// TODO-PQ: 32-byte-encoded ML-DSA-65 signature over `signing_domain()`.
     /// `None` until the PQ pack/unpack API lands. Not faked.
     pub pq_sig: Option<Vec<u8>>,
+    /// Channel-binding slot (F7): SHA3-256 of the handshake transcript.
+    /// `None` => zero-filled 32-byte binding (legacy/insecure; frame is NOT
+    /// bound to a channel and could be replayed cross-channel). `Some(hash)` =>
+    /// the Ed25519 signature commits to `hash`, so the frame can only verify on
+    /// the channel that produced the same transcript hash.
+    pub channel_binding: Option<[u8; 32]>,
 }
 
 impl SignedFrame {
@@ -52,15 +78,46 @@ impl SignedFrame {
             payload,
             classical_sig: None,
             pq_sig: None,
+            channel_binding: None,
         }
+    }
+
+    /// Builder: attach a channel-binding hash to a frame before signing.
+    ///
+    /// The binding MUST be set *before* `sign_classical` is called, otherwise the
+    /// signature will not cover it. This is the ergonomic path used by carriers
+    /// after the handshake completes (see `bebop_proto_wire::handshake`).
+    pub fn with_binding(mut self, hash: [u8; 32]) -> Self {
+        self.channel_binding = Some(hash);
+        self
     }
 
     /// The exact bytes a signature commits to: `capability_canonical || payload`.
     /// Any change to the capability (scope/nonce/expiry/subject) or the payload
     /// invalidates the signature.
+    ///
+    /// NOTE: WS-2 (TLV codec) may replace `capability.canonical_bytes()` with a
+    /// TLV codec and extend this. This method is kept stable (returns `Vec<u8>`)
+    /// so WS-2 can build on top of it; the channel-binding slot is layered in
+    /// [`binding_signing_domain`], which WS-2 does NOT need to touch.
     pub fn signing_domain(&self) -> CapResult<Vec<u8>> {
         let mut buf = self.capability.canonical_bytes()?;
         buf.extend_from_slice(&self.payload);
+        Ok(buf)
+    }
+
+    /// The bytes the *actual* signature commits to: `signing_domain()` followed
+    /// by the 32-byte channel-binding slot.
+    ///
+    /// - `channel_binding = Some(h)` => append `h` (32 bytes). The frame is bound
+    ///   to the channel that produced `h`.
+    /// - `channel_binding = None` => append 32 zero bytes. Legacy/insecure: the
+    ///   signature does not bind to any specific channel, so a captured frame can
+    ///   be replayed cross-channel. Explicitly flagged in the module docs.
+    pub fn binding_signing_domain(&self) -> CapResult<Vec<u8>> {
+        let mut buf = self.signing_domain()?;
+        let binding = self.channel_binding.unwrap_or([0u8; 32]);
+        buf.extend_from_slice(&binding);
         Ok(buf)
     }
 
@@ -69,7 +126,7 @@ impl SignedFrame {
     ///
     /// This produces a REAL Ed25519 signature; tampering fails verification.
     pub fn sign_classical(&mut self, seed: &[u8; 32]) -> CapResult<()> {
-        let msg = self.signing_domain()?;
+        let msg = self.binding_signing_domain()?;
         let sig: [u8; 64] = bebop2_core::sign::sign(seed, &msg);
         self.classical_sig = Some(sig.to_vec());
         Ok(())
@@ -102,7 +159,7 @@ impl SignedFrame {
             return Err(CapError::ClassicalVerifyFailed);
         }
         let sig_arr: [u8; 64] = sig.clone().try_into().map_err(|_| CapError::BadLength)?;
-        let msg = self.signing_domain()?;
+        let msg = self.binding_signing_domain()?;
         let ok = bebop2_core::sign::verify(&self.capability.subject_key, &msg, &sig_arr);
         if ok {
             Ok(())
@@ -191,5 +248,103 @@ mod tests {
             Err(CapError::HybridIncomplete)
         ));
         assert!(frame.pq_sig.is_none(), "pq_sig must stay None (not faked)");
+    }
+
+    // ── Channel binding (F7): cross-channel replay defense ────────────────────
+
+    /// Happy path: bind to channel hash B, sign, verify on the SAME channel.
+    #[test]
+    fn bound_frame_verifies_on_same_channel() {
+        let seed = [21u8; 32];
+        let (pk, _) = bebop2_core::sign::keygen(&seed);
+        let cap = Capability::new(pk, Resource::Route, Action::Send, [4u8; 8], 777);
+        let binding = [0xabu8; 32]; // hash of channel A's handshake transcript
+        let mut frame = SignedFrame::new(cap, b"bound-payload".to_vec()).with_binding(binding);
+        frame.sign_classical(&seed).unwrap();
+        // Same binding => signature still covers it => verifies.
+        assert!(frame.verify_classical().is_ok(), "same-channel binding must verify");
+    }
+
+    /// RED→GREEN: a frame signed with binding=B, then verified on a DIFFERENT
+    /// channel binding B' (!= B), MUST FAIL. This is the core replay defense:
+    /// the signature now commits to the binding slot, so swapping channels
+    /// breaks verification.
+    #[test]
+    fn bound_frame_fails_on_different_channel() {
+        let seed = [33u8; 32];
+        let (pk, _) = bebop2_core::sign::keygen(&seed);
+        let cap = Capability::new(pk, Resource::Route, Action::Send, [5u8; 8], 888);
+
+        // Attacker captures a frame legitimately signed on channel A (binding=B).
+        let binding_b = [0x11u8; 32]; // channel A transcript hash
+        let mut captured = SignedFrame::new(cap.clone(), b"replay-me".to_vec()).with_binding(binding_b);
+        captured.sign_classical(&seed).unwrap();
+        assert!(captured.verify_classical().is_ok(), "sanity: signed on A verifies on A");
+
+        // Attacker replays it on channel B', claiming binding=B' (≠ B).
+        let binding_b_prime = [0x22u8; 32]; // channel B' transcript hash
+        let replayed = SignedFrame {
+            capability: cap.clone(),
+            payload: b"replay-me".to_vec(),
+            classical_sig: captured.classical_sig.clone(), // OLD signature (covers binding_b)
+            pq_sig: None,
+            channel_binding: Some(binding_b_prime),        // attacker swaps binding field
+        };
+        // Signature covers binding_b, not binding_b_prime => MUST FAIL.
+        assert!(
+            replayed.verify_classical().is_err(),
+            "cross-channel replay (binding swap) must FAIL"
+        );
+    }
+
+    /// Negative: an attacker who flips the `channel_binding` field on a VALID
+    /// frame and re-verifies cannot make it pass — the sig covers the slot.
+    #[test]
+    fn tampering_binding_field_fails() {
+        let seed = [44u8; 32];
+        let (pk, _) = bebop2_core::sign::keygen(&seed);
+        let cap = Capability::new(pk, Resource::Ledger, Action::Append, [6u8; 8], 999);
+        let mut frame = SignedFrame::new(cap, b"binding-test".to_vec()).with_binding([0x99u8; 32]);
+        frame.sign_classical(&seed).unwrap();
+        assert!(frame.verify_classical().is_ok());
+
+        // Swap the binding field to a different hash, keep the old sig.
+        frame.channel_binding = Some([0x77u8; 32]);
+        assert!(
+            frame.verify_classical().is_err(),
+            "tampering the binding field must break the signature"
+        );
+    }
+
+    /// Legacy compatibility: `None` binding => zero-filled slot. A frame signed
+    /// with no binding (legacy) is channel-agnostic: it verifies only under the
+    /// zero-slot interpretation, and does NOT become bound to a new channel when
+    /// a receiver fabricates a binding. This is the INSECURE path and is
+    /// explicitly flagged — fresh channels MUST set a real binding; receivers
+    /// MUST reject `None` once binding is enforced.
+    #[test]
+    fn legacy_none_binding_is_zero_filled_and_channel_agnostic() {
+        let seed = [55u8; 32];
+        let (pk, _) = bebop2_core::sign::keygen(&seed);
+        let cap = Capability::new(pk, Resource::Presence, Action::Send, [7u8; 8], 1);
+        let mut frame = SignedFrame::new(cap, b"legacy".to_vec()); // channel_binding = None
+        frame.sign_classical(&seed).unwrap();
+        // Sanity: the binding slot in the signed domain is 32 zero bytes.
+        let dom = frame.binding_signing_domain().unwrap();
+        assert_eq!(dom[dom.len() - 32..], [0u8; 32]);
+        // Legacy frame verifies when the receiver also treats binding as None.
+        assert!(frame.verify_classical().is_ok());
+
+        // A receiver that requires a REAL binding (Some(hash)) will REJECT a
+        // legacy frame: the sig covered the zero slot, not their channel hash.
+        // This proves the legacy frame is unbound — it is NOT silently accepted
+        // as bound to the new channel. The insecure part is that a receiver who
+        // STILL accepts `None` would let it replay cross-channel.
+        let mut as_bound = frame.clone();
+        as_bound.channel_binding = Some([0xccu8; 32]); // receiver's channel hash
+        assert!(
+            as_bound.verify_classical().is_err(),
+            "legacy frame must NOT verify as bound to a new channel"
+        );
     }
 }

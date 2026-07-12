@@ -91,3 +91,23 @@ pub fn sign_frame(frame: &mut bebop_proto_cap::SignedFrame, seed: &[u8; 32]) -> 
     frame.sign_classical(seed)?;
     Ok(())
 }
+
+/// Convenience: bind a frame to the channel, then sign it, in one call.
+///
+/// This is the carrier's send path: after the TLS handshake completes, the
+/// carrier computes `channel_binding_hash(handshake_transcript)` and passes it
+/// here so the resulting Ed25519 signature commits to the channel. A frame
+/// produced this way cannot be replayed on a different channel (F7).
+///
+/// `transcript` MUST be the authenticated handshake bytes (see
+/// [`crate::handshake::channel_binding_hash`]).
+pub fn sign_frame_bound(
+    frame: &mut bebop_proto_cap::SignedFrame,
+    seed: &[u8; 32],
+    handshake_transcript: &[u8],
+) -> WireResult<()> {
+    let binding = crate::handshake::channel_binding_hash(handshake_transcript);
+    *frame = frame.clone().with_binding(binding);
+    frame.sign_classical(seed)?;
+    Ok(())
+}

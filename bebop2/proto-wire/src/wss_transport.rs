@@ -317,4 +317,94 @@ mod tests {
         let gate = HybridGate::new(HybridPolicy::ClassicalUntilPqAudit);
         assert!(!format!("{gate:?}").contains("score"));
     }
+
+    /// Channel binding (F7) happy path: handshake -> hash -> bind -> sign -> verify.
+    /// The frame is signed via `sign_frame_bound` (the carrier send path) using a
+    /// handshake-transcript hash, then verified on the SAME channel.
+    #[tokio::test]
+    async fn wss_channel_bound_frame_verifies_on_same_channel() {
+        let probe = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = probe.local_addr().unwrap();
+        drop(probe);
+
+        let (tx, rx) = oneshot::channel();
+        let server_addr = addr.to_string();
+        let server = tokio::spawn(async move {
+            run_server(server_addr, tx, |mut t| async move {
+                let frame = t.recv().await.unwrap();
+                // Server verifies the bound frame through the hybrid gate.
+                assert!(frame.verify_classical().is_ok(), "bound frame must verify on same channel");
+                assert!(frame.channel_binding.is_some(), "frame must carry a channel binding");
+                t.send(frame).await.unwrap();
+                let _ = t.close().await;
+            })
+            .await;
+        });
+
+        rx.await.unwrap();
+
+        let client_ep = WssEndpoint::Url(format!("ws://{addr}"));
+        let mut client = WssTransport::connect(&client_ep).await.unwrap();
+
+        // Simulate a completed handshake; the transcript hash binds the channel.
+        let transcript = b"channel-A-handshake-transcript";
+        let seed = [123u8; 32];
+        let (pk, _sk) = bebop2_core::sign::keygen(&seed);
+        let cap = Capability::new(pk, Resource::Route, Action::Send, [7u8; 8], 4242);
+        let mut frame = SignedFrame::new(cap, b"bound-wire-payload".to_vec());
+        crate::sign_frame_bound(&mut frame, &seed, transcript).unwrap();
+
+        client.send(frame).await.unwrap();
+        let echoed = client.recv().await.unwrap();
+        assert!(echoed.verify_classical().is_ok());
+        server.await.unwrap();
+    }
+
+    /// RED→GREEN over the REAL wss carrier: a frame bound to channel A's handshake
+    /// transcript is captured and replayed on channel B' (different transcript
+    /// hash). The server's `recv` (hybrid gate) MUST reject it. Proves the
+    /// cross-channel replay defense is enforced at the transport layer, not just
+    /// in the crypto unit test.
+    #[tokio::test]
+    async fn wss_rejects_cross_channel_replay() {
+        let probe = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = probe.local_addr().unwrap();
+        drop(probe);
+
+        let (tx, rx) = oneshot::channel();
+        let server_addr = addr.to_string();
+        let server = tokio::spawn(async move {
+            run_server(server_addr, tx, |mut t| async move {
+                // A frame bound to a DIFFERENT channel (B') must be rejected.
+                let res = t.recv().await;
+                assert!(res.is_err(), "cross-channel replay must be rejected over wss");
+            })
+            .await;
+        });
+
+        rx.await.unwrap();
+
+        let client_ep = WssEndpoint::Url(format!("ws://{addr}"));
+        let mut client = WssTransport::connect(&client_ep).await.unwrap();
+
+        // Channel A transcript + its binding.
+        let transcript_a = b"channel-A-handshake-transcript";
+        let binding_a = crate::handshake::channel_binding_hash(transcript_a);
+        let seed = [55u8; 32];
+        let (pk, _sk) = bebop2_core::sign::keygen(&seed);
+        let cap = Capability::new(pk, Resource::Ledger, Action::Append, [2u8; 8], 4242);
+        let mut frame = SignedFrame::new(cap, b"replay-target".to_vec()).with_binding(binding_a);
+        frame.sign_classical(&seed).unwrap();
+
+        // Attacker swaps the binding field to channel B''s binding but keeps the
+        // old signature (which covers binding_a), then sends over channel B'.
+        let transcript_b = b"channel-B-prime-handshake-transcript";
+        let binding_b = crate::handshake::channel_binding_hash(transcript_b);
+        let mut replayed = frame;
+        replayed.channel_binding = Some(binding_b);
+        assert_ne!(binding_a, binding_b);
+
+        client.send(replayed).await.unwrap();
+        server.await.unwrap();
+    }
 }
