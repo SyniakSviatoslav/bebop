@@ -30,6 +30,7 @@
 pub mod capability;
 pub mod error;
 pub mod hybrid_gate;
+pub mod roster;
 pub mod scope;
 pub mod signed_frame;
 
@@ -38,5 +39,6 @@ pub mod signed_frame;
 pub use capability::Capability;
 pub use error::{CapError, CapResult};
 pub use hybrid_gate::{HybridGate, HybridPolicy};
+pub use roster::{AnchorRoster, Delegation, Effect, verify_chain};
 pub use scope::{Action, Resource, Scope};
 pub use signed_frame::SignedFrame;
