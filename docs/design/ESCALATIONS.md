@@ -14,17 +14,31 @@ operator or a designated user) fills the `Resolution` field.
 - Never delete an `OPEN` entry to make the gate green.
 
 <!-- LOGIC-GATE:OPEN-ITEMS (regenerated each run; do not edit by hand) -->
-## Open escalations (6) — human arbiter required
+## Open escalations (13) — human arbiter required
 
 - **ESC-b259452574aa** [unbacked] `README.md:38` — - **Narration + looks** — `bebop init` picks a voice (bebop / plain / sarcastic / corporate-killer)
   - Arbiter: operator · Status: OPEN
 - **ESC-aa8900135b97** [unbacked] `README.md:123` — | **zkVM `decide()` journal** | Every admitted command gets a tamper-evident digest over `(state, commandHash, seq)`. On by default at the kernel gate. Replay-verifiable. **Scope:** detects *accidenta
+  - Arbiter: operator · Status: OPEN
+- **ESC-c72c1edace5a** [unbacked] `README.md:126` — | **Optical field recall** | SVETlANNa/Meep optical primitive re-ranks `recall` candidates by field correlation, behind `opts.opticalRecall`. Advisory only — graph score dominates. | LIVE (knowledge.t
   - Arbiter: operator · Status: OPEN
 - **ESC-6146ded2191c** [unbacked] `AGENTS.md:65` —    decisions, and ground-truth facts to the canonical corpus. Source of truth = the corpus, not chat.
   - Arbiter: operator · Status: OPEN
 - **ESC-47b70acd788f** [unbacked] `docs/ARCHITECTURE.md:84` — A servo: PID authority, ICIR factor health, resonance risk **before** any gain change, and >3σ
   - Arbiter: operator · Status: OPEN
 - **ESC-16bdc71ebfec** [unbacked] `docs/ARCHITECTURE.md:85` — anomaly signals. Fed quality streams; emits math-proven authority. Applied live to any
+  - Arbiter: operator · Status: OPEN
+- **ESC-76ccf002dde5** [unbacked] `docs/design/LOGIC-LAWS.md:242` — ## 16. Fast & deep learning — Feynman (for ALL agents' self-improvement)
+  - Arbiter: operator · Status: OPEN
+- **ESC-8d2889a2685e** [unbacked] `docs/design/LOGIC-LAWS.md:259` —   engage deliberate S2 for trust-boundary / red-line / math-proven claims.
+  - Arbiter: operator · Status: OPEN
+- **ESC-23aa9f9e29b1** [unbacked] `docs/design/LOGIC-LAWS.md:263` —   appeal to authority/bandwagon, correlation≠causation, slippery slope,
+  - Arbiter: operator · Status: OPEN
+- **ESC-bf11c41f4d85** [unbacked] `docs/design/LOGIC-LAWS.md:306` — voice (cosmo-noir, warm, a little chaotic-good). Therefore:
+  - Arbiter: operator · Status: OPEN
+- **ESC-01f19461a247** [unbacked] `docs/design/LOGIC-LAWS.md:324` —   exhibits a *named, detectable* fallacy (§17) or asserts a causal link on
+  - Arbiter: operator · Status: OPEN
+- **ESC-00163551ec3b** [unbacked] `docs/design/LOGIC-LAWS.md:325` —   mere correlation — same grounding path as §4/§9/§10–§14.
   - Arbiter: operator · Status: OPEN
 - **ESC-9f594d9df384** [unbacked] `bebop2/README.md:3` — > Greenfield rebuild of bebop. NOT a refactor of `crates/bebop` — a parallel implementation
   - Arbiter: operator · Status: OPEN
