@@ -15,6 +15,14 @@ members = [
     "rust-core",
     "crates/bebop",
     "bebop2/core",
+    # ── Tier-0 P0-6 protocol W/A/H library lines (scaffold skeletons) ──────────
+    # Separate crate names from the agent core (`crates/bebop`) and the PQ core
+    # (`bebop2/core`). Dep-free; no production logic; do NOT affect dowiz.
+    "bebop2/proto-wire",    # W — wire transport (iroh + WSS; replaces zenoh stub)
+    "bebop2/proto-cap",     # A — per-frame signed capability (replaces JWT)
+    # NOTE: bebop2/proto-crypto (H) is intentionally NOT a member on this review
+    # branch — it is a P0-6 scaffold (separate review). proto-wire/proto-cap
+    # do not depend on it, so this branch builds standalone without it.
 ]
 exclude = [
     "crates/core-legacy",
