@@ -79,7 +79,7 @@ OpenSSL in `proto-wire`, self-captured KATs, unanchored capabilities). Those are
 | "neither PQ primitive has external KAT" | **ML-DSA-65 60/60 NIST ACVP** byte-exact (vendored `core/kat/acvp/`) | `cargo test -p bebop2-core` ACVP suite |
 | numeric instability (C8/B- family) | 7 numeric fixes in `core` | `core` 157 tests green |
 
-**Verified:** `cargo test --workspace` → **648 Rust tests pass, 0 fail**.
+**Verified:** `cargo test --workspace` → **659 Rust tests pass, 0 fail**.
 
 **Still TODO (honest gaps — not claimed done):**
 - **Wire-spec document** — a standalone byte-level spec for the canonical TLV framing +

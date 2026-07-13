@@ -53,7 +53,7 @@ When a test is red, the bug is real even if the code "looks right". Investigate 
 oracle (e.g. a Python reference implementation) before concluding the test is wrong.
 
 ## Build/test
-- `cargo test` — 648 Rust tests, RED+GREEN, 0 fail
+- `cargo test` — 659 Rust tests, RED+GREEN, 0 fail
 - `cargo test -p bebop2-core` (full suite), `cargo clippy -p bebop2-core --all-targets`
 - Crypto KATs live in `bebop2/core/src/kat/`; RFC 8439 §2.5.2 + Appendix A.3 are the Poly1305 anchors.
 

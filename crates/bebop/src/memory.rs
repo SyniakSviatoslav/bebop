@@ -34,6 +34,13 @@ pub struct LivingMemory {
     /// recoverable via `restore` / `get_from_attic`.
     attic: HashMap<String, MemoryNode>,
     clock: u64,
+    /// Exponential-forgetting time constant (ticks). Half-life t_½ = τ·ln2.
+    /// Chosen so salience spans ~[s_min, s_max] over `n` ticks.
+    tau: f64,
+    /// Eviction threshold θ. A node is moved to the attic iff its salience
+    /// decays below θ. Set from the persistence D* (BP-09) at the call site;
+    /// the default keeps un-reinforced (salience 0) nodes evicting as before.
+    theta: f64,
 }
 
 impl LivingMemory {
@@ -42,7 +49,18 @@ impl LivingMemory {
             nodes: HashMap::new(),
             attic: HashMap::new(),
             clock: 0,
+            tau: 7.0,
+            theta: 0.5,
         }
+    }
+
+    /// Configure the forgetting time-constant and eviction threshold θ (D* from
+    /// BP-09 persistence). Keeps the API explicit for callers that wire the
+    /// salience filter to the persistence survival table.
+    pub fn with_params(mut self, tau: f64, theta: f64) -> Self {
+        self.tau = if tau > 0.0 { tau } else { 7.0 };
+        self.theta = theta.max(0.0);
+        self
     }
 
     pub fn remember(&mut self, concept: &str, payload: &str) -> String {
@@ -135,17 +153,23 @@ impl LivingMemory {
         }
     }
 
-    /// Advance the forgetting clock: every tick ages nodes; old ones evict.
-    /// Evicted nodes are MOVED to the `attic` (cold tier) — never dropped — so
-    /// the raw state is preserved and recoverable via `restore`.
+    /// Advance the forgetting clock. Replaces the old hash-lottery eviction
+    /// (every node evicted within ≤7 ticks regardless of importance) with
+    /// **salience-weighted exponential decay**:
+    ///   s_{t+1} = s_t · exp(−Δt/τ)
+    /// A node is moved to the `attic` (cold tier, recoverable) iff its salience
+    /// has decayed below the eviction threshold θ (= D* from BP-09). High-
+    /// salience (frequently reinforced) nodes survive; one-shot noise decays
+    /// out. Eviction stays NON-DESTRUCTIVE (attic + restore preserved).
     pub fn tick(&mut self) {
         self.clock += 1;
-        // Evict nodes whose concept hash mod 7 == clock mod 7 (deterministic "forgetting").
-        let target = (self.clock % 7) as u8;
+        let decay = (-1.0 / self.tau).exp(); // exp(−Δt/τ), Δt = 1 tick
+        let theta = self.theta;
         let mut evicted: Vec<(String, MemoryNode)> = Vec::new();
         self.nodes.retain(|id, n| {
-            if (simple_hash(n.concept.as_bytes()) as u8) % 7 == target {
-                // Move to attic instead of dropping.
+            n.salience *= decay;
+            if n.salience < theta {
+                // Decayed below threshold → move to attic, never drop.
                 evicted.push((id.clone(), n.clone()));
                 false
             } else {
@@ -157,8 +181,27 @@ impl LivingMemory {
         }
     }
 
+    /// Reinforce a concept on `seen`: salience += boost (soft online estimator).
+    /// High-persistence claims that are seen every tick keep salience above θ
+    /// and survive eviction; one-shot noise with no reinforcement decays out.
+    pub fn reinforce(&mut self, concept: &str, boost: f64) {
+        let id = format!("{:08x}", simple_hash(concept.as_bytes()));
+        if let Some(n) = self.nodes.get_mut(&id) {
+            n.salience += boost;
+        } else if let Some(n) = self.attic.get_mut(&id) {
+            // Re-entry: a reinforced-but-evicted node gets a restore path.
+            n.salience += boost;
+        }
+    }
+
     pub fn layer_size(&self, l: Layer) -> usize {
         self.nodes.values().filter(|n| n.layer == l).count()
+    }
+}
+
+impl Default for LivingMemory {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

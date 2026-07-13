@@ -12,6 +12,7 @@
 pub mod active_inference; // deterministic FEP policy advisor (pymdp-grounded)
 pub mod agent_profile; // DEFAULT agent identity: free soul + masculine + reptile logic + empathy
 pub mod agentic_git; // GCC pattern: content-addressed agent action-history (COMMIT/CONTEXT/LOG/MERGE)
+pub mod algebra; // cosine / basis-projection primitives (BP-10 orthogonometer)
 pub mod audit; // tamper-evident hash-chained audit log (deterministic)
 pub mod changes; // Q: Hermes-style change/action record (key-changes visibility)
 pub mod cli; // the `bebop <cmd>` dispatcher (also the TUI entry)
@@ -26,7 +27,6 @@ pub mod doc_claims;
 pub mod drift; // GLOBAL RULE: systems-thinking / architecture drift detector (configurable, CLI flag)
 pub mod enrich; // dossier-derived: trace replay, Pareto, opt-algos, SEAL analog, design-thinking
 pub mod entropy_ledger; // BP-06: integer-bit entropy-budget ledger (cap, NOT Σ=0)
-pub mod renormalizer; // BP-11: claim-preserving, budget-crediting renormalizer (rate-distortion@0)
 pub mod error_patterns; // AUTO-LEARNING: error-pattern scan at session/loop/debug end → persisted summary
 pub mod execution; // prompt-cache ledger, model cascade, batch splitter (verified-speed primitives)
 pub mod extensions; // F: user rules/hooks/loops/gates/prompts (fail-closed TOML)
@@ -45,15 +45,15 @@ pub mod mapping; // MAPPING: live edge-weight refresh (congestion → W_uv) over
 pub mod matcher; // OPEN dispatch matcher: pure/deterministic/replicable (kills DANGER #1 single-server)
 pub mod mathx; // §2 numerics: divergence, transfer-func step response, Lagrange interp, limit-cycle detect
 pub mod mcp; // minimal MCP server over stdio (JSON-RPC)
-pub mod memory;
+pub mod memory; // BP-13: salience-weighted exponential decay (was hash-lottery)
 pub mod mission; // the sign-off: animated dock + cigar at loop/task end
-pub mod algebra; // cosine / basis-projection primitives (BP-10 orthogonometer)
-pub mod orthogonality; // BP-10: orthogonometer + Goodhart detector
 pub mod multipilot;
 pub mod optical; // deterministic perceptual-hash image search (aHash + Hamming)
+pub mod orthogonality; // BP-10: orthogonometer + Goodhart detector
 pub mod outfit;
 pub mod panels; // D/E/H TUI panels: scoreboard / minimap / drift / spark
 pub mod pddl; // deterministic STRIPS-style planner + chain-of-thought trace
+pub mod persistence; // BP-09: survival table (Hungarian + D* test + attic re-entry)
 pub mod pod; // POD: pseudonymous Proof-of-Delivery (Princess Pi attribution, audit 29157)
 pub mod policy; // N: default policies N1/N2/N3 (auto-structure/parallel/descartes)
 pub mod portkey; // deterministic local transport / gateway abstraction (pub-sub bus)
@@ -62,6 +62,7 @@ pub mod recall_graph; // SPIKE (eval-gated): codebase-memory-mcp graph-first ret
 pub mod reconnect; // MHD "magnetic reconnection": topology change to shed overload energy
 pub mod redteam; // T3MP3ST deterministic red-team prompt scanner
 pub mod registry; // content-addressed module registry (deterministic)
+pub mod renormalizer; // BP-11: claim-preserving, budget-crediting renormalizer (rate-distortion@0)
 pub mod reputation; // REPUTATION: node-trust ledger (the real decentralization blocker)
 pub mod research_patterns; // reverse-engineered patterns (research pass 2026-07-10)
 pub mod router; // the token/model router (cheapest adequate)
