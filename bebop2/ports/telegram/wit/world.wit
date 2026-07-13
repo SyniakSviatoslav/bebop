@@ -1,0 +1,21 @@
+package bebop:ports@0.1.0;
+
+/// Capability-scoped outbound port: push an order notification to Telegram.
+///
+/// ZERO-AMBIENT-AUTHORITY: this world imports EXACTLY ONE function —
+/// `notify-telegram` — and nothing else. There is no `wasi:filesystem`,
+/// `wasi:sockets`, `wasi:cli`, or `wasi:io` import. The host (DK-03) mechanically
+/// grants only the import set that the component's `Scope` (`Order::Notify`)
+/// permits; any attempt by the guest to import a wider capability is rejected at
+/// instantiation. The guest therefore literally cannot open a socket, read a
+/// file, or take any action outside `Order::Notify`.
+world notify-telegram {
+    /// Push a notification message to Telegram. The host maps this single import
+    /// to the `Resource::Order x Action::Notify` scope (see `proto-cap` scope.rs:
+    /// discriminant 0x06 / 0x08). Returns 0 on success.
+    import notify-telegram: func(message: string) -> u32;
+
+    /// The component's entry point. The host invokes this to deliver the
+    /// notification payload it has authorized under `Order::Notify`.
+    export run: func() -> u32;
+}

@@ -1,0 +1,33 @@
+[package]
+name = "bebop-port-telegram"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+description = "DK-02 — Telegram Notify port as a wasm32-wasip2 component. Zero-ambient-authority: only the `notify-telegram` host import (Scope Order::Notify)."
+
+# This crate is a WASM component, not a normal library. It is built explicitly via
+# `cargo component build --target wasm32-wasip2` (see tooling/build-wasm-component.sh)
+# and is NOT exercised by the default `cargo test --workspace` run (no rust
+# `#[test]`s). It joins the workspace only so `cargo` tooling resolves uniformly.
+[lib]
+crate-type = ["cdylib"]
+
+# wasm32-wasip2 component target (WASI p2, component model).
+[target.wasm32-wasip2]
+
+[dependencies]
+# `wit_bindgen_rt` is the runtime the `cargo component build`-generated bindings
+# in `src/bindings.rs` reference (runtime_path: "wit_bindgen_rt"). cargo-component
+# generates those bindings from `wit/world.wit`; we supply the matching runtime
+# crate explicitly so the guest links cleanly. Version is pinned to the
+# wit-bindgen the toolchain emits (0.36.x).
+wit-bindgen-rt = "0.36"
+
+# NOTE: we deliberately do NOT depend on `bebop2-core` here. That crate defines a
+# custom `panic_impl` lang item for its no_std wasm build, which collides with
+# `std` when linked into a std guest. The guest is dependency-free beyond the
+# bindgen runtime, which keeps its import section clean (zero ambient authority):
+# only `notify-telegram` is ever imported.
+
+[features]
+default = []

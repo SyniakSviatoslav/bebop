@@ -1,0 +1,37 @@
+[package]
+name = "bebop-wasm-host"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+description = "DK-03 — wasmtime host mapping Scope->WASI imports, deny-by-default. wasmtime is feature-gated so the default build stays offline-clean (708 green)."
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+# The capability namespace (Scope / Resource / Action) reused from proto-cap.
+# NOTE: this is a *light* reuse — the host only needs the scope type, not the
+# full signing/facade machinery. We depend on the proto-cap crate so the
+# discriminant byte mapping (scope.rs: Resource::Order=0x06, Action::Notify=0x08)
+# stays the single source of truth.
+bebop-proto-cap = { path = "../proto-cap", version = "0.1.0", default-features = false }
+
+# wasmtime is OPT-IN. The default build (no feature) carries NO wasmtime and the
+# lib compiles to a deny-by-default stub that returns `WasmRuntimeDisabled`.
+# Enabling `feature="wasm"` pulls wasmtime 46.x for real component instantiation.
+[dependencies.wasmtime]
+version = "46.0.1"
+optional = true
+default-features = false
+features = ["component-model", "cranelift", "runtime", "gc-drc", "demangle"]
+
+[features]
+# Default: NO features. wasmtime is NOT compiled. `cargo test --workspace` stays
+# offline-clean and the verified 708 remains green.
+default = []
+# Real wasmtime-backed instantiation (deny-by-default Scope->import mapping).
+wasm = ["dep:wasmtime"]
+
+[dev-dependencies]
+# None required; the feature-OFF test is zero-dep. The feature-ON test compiles
+# its own tiny `wat` wasm inline and needs no extra dev-crate.
