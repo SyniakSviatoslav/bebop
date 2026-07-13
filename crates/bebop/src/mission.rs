@@ -71,11 +71,11 @@ pub fn mission_summary(title: &str, lines: &[&str]) {
 /// A run trace — what happened during a mission, used to derive debrief badges.
 #[derive(Debug, Clone, Default)]
 pub struct Trace {
-    pub loop_count: u32,   // how many autonomously-run loops
-    pub bugs: u32,         // bugs hit
-    pub test_delta: i32,   // tests added − tests that broke (net quality)
-    pub rollback: bool,    // had to rewind / roll back
-    pub levelup: bool,     // crossed a milestone (new capability/category done)
+    pub loop_count: u32, // how many autonomously-run loops
+    pub bugs: u32,       // bugs hit
+    pub test_delta: i32, // tests added − tests that broke (net quality)
+    pub rollback: bool,  // had to rewind / roll back
+    pub levelup: bool,   // crossed a milestone (new capability/category done)
 }
 
 /// Debrief badge — honest, falsifiable outcome of a mission.
@@ -149,7 +149,13 @@ mod tests {
     #[test]
     fn debrief_mvp_when_loops_shipped_clean() {
         // GREEN: autonomous loops + non-negative test delta + no rollback → MVP.
-        let t = Trace { loop_count: 3, bugs: 0, test_delta: 2, rollback: false, levelup: false };
+        let t = Trace {
+            loop_count: 3,
+            bugs: 0,
+            test_delta: 2,
+            rollback: false,
+            levelup: false,
+        };
         let b = debrief(&t);
         assert!(b.contains(&Badge::Mvp));
         assert!(!b.contains(&Badge::Degraded));
@@ -158,7 +164,13 @@ mod tests {
     #[test]
     fn debrief_degraded_on_rollback() {
         // GREEN (honest): a rollback always yields DEGRADED, never spun as success.
-        let t = Trace { loop_count: 1, bugs: 2, test_delta: -1, rollback: true, levelup: false };
+        let t = Trace {
+            loop_count: 1,
+            bugs: 2,
+            test_delta: -1,
+            rollback: true,
+            levelup: false,
+        };
         let b = debrief(&t);
         assert!(b.contains(&Badge::Degraded));
         assert!(!b.contains(&Badge::Mvp));
@@ -167,7 +179,13 @@ mod tests {
     #[test]
     fn debrief_levelup_flag() {
         // GREEN: levelup set → LEVEL-UP badge present.
-        let t = Trace { loop_count: 0, bugs: 0, test_delta: 0, rollback: false, levelup: true };
+        let t = Trace {
+            loop_count: 0,
+            bugs: 0,
+            test_delta: 0,
+            rollback: false,
+            levelup: true,
+        };
         assert!(debrief(&t).contains(&Badge::LevelUp));
     }
 

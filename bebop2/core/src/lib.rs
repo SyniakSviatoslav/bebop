@@ -287,30 +287,32 @@ mod no_std_support {
 // PQ crypto core, so they are gated behind the `host` feature and excluded from the wasm32
 // (no_std + no-alloc) build. The pure PQ crypto path below never references them.
 #[cfg(feature = "host")]
-pub mod field; // graph-PDE spectral kernel (Laplacian eigenmodes) — replaces dense tensors
-#[cfg(feature = "host")]
-pub mod vsa; // vector symbolic archive (hyperplane bundling, not dense matrices)
+pub mod active; // active inference (free-energy, spectral)
 #[cfg(feature = "host")]
 pub mod algebra; // cosine / cross / sinc — basis projections
-#[cfg(feature = "host")]
-pub mod kalman; // Kalman filter (trajectory integrals, not vector math)
-#[cfg(feature = "host")]
-pub mod lyapunov; // Lyapunov derivative (stability, not ad-hoc vectors)
 #[cfg(feature = "host")]
 pub mod chebyshev; // Chebyshev spectral propagator
 #[cfg(feature = "host")]
 pub mod fft; // FFT (frequency-domain eigen-decomposition)
 #[cfg(feature = "host")]
-pub mod active; // active inference (free-energy, spectral)
+pub mod field; // graph-PDE spectral kernel (Laplacian eigenmodes) — replaces dense tensors
+#[cfg(feature = "host")]
+pub mod kalman; // Kalman filter (trajectory integrals, not vector math)
+#[cfg(feature = "host")]
+pub mod lyapunov; // Lyapunov derivative (stability, not ad-hoc vectors)
+#[cfg(feature = "host")]
+pub mod resonator;
+#[cfg(feature = "host")]
+pub mod vsa; // vector symbolic archive (hyperplane bundling, not dense matrices) // closed-loop controller: generate→reflect→supervise, Lyapunov freeze, rollback-to-best
 
 // crypto — all from scratch, zero-dep, post-quantum.
-pub mod pq_kem; // ML-KEM-768 (FIPS 203)
-pub mod pq_dsa; // ML-DSA-65 (FIPS 204)
 pub mod aead; // XChaCha20-Poly1305 (RFC 8439)
-pub mod kdf; // Argon2id
 pub mod hash; // SHA-512 + SHA3
-pub mod sign; // Ed25519 (hybrid classical fallback)
-pub mod rng; // CSPRNG from hardware entropy (in-tree, no getrandom dep)
+pub mod kdf; // Argon2id
+pub mod pq_dsa; // ML-DSA-65 (FIPS 204)
+pub mod pq_kem; // ML-KEM-768 (FIPS 203)
+pub mod rng;
+pub mod sign; // Ed25519 (hybrid classical fallback) // CSPRNG from hardware entropy (in-tree, no getrandom dep)
 
 // KAT vectors (committed; parent-embedded short ones in vectors.rs, agent-fetched long
 // ones in vectors_long.rs). Read by #[cfg(test)] in each crypto module.
@@ -341,7 +343,7 @@ pub fn fexp(x: f64) -> f64 {
         fl as i32
     };
     let r = x - (k as f64) * ln2; // |r| <= ln2/2 ≈ 0.3466
-    // e^r via Taylor (fast, deterministic, no RNG, no pow()).
+                                  // e^r via Taylor (fast, deterministic, no RNG, no pow()).
     let mut t = 1.0_f64;
     let mut term = 1.0_f64;
     let mut n = 1u32;
@@ -379,7 +381,10 @@ mod tests {
             let d = fexp(x);
             let s = x.exp();
             // relative tolerance — absolute 1e-12 is unrealistic for |e^x|~22000.
-            assert!((d - s).abs() / s.abs() < 1e-12, "fexp({x}) = {d}, std = {s}");
+            assert!(
+                (d - s).abs() / s.abs() < 1e-12,
+                "fexp({x}) = {d}, std = {s}"
+            );
         }
     }
 }

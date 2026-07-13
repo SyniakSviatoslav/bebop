@@ -31,8 +31,12 @@ impl Default for Gender {
 /// setting is discoverable in any language the user writes.
 pub fn parse_gender(s: &str) -> Option<Gender> {
     match s.to_ascii_lowercase().as_str() {
-        "masculine" | "male" | "m" | "чол" | "чоловічий" | "муж" | "м" => Some(Gender::Masculine),
-        "feminine" | "female" | "f" | "жін" | "жіночий" | "жіноча" | "ж" => Some(Gender::Feminine),
+        "masculine" | "male" | "m" | "чол" | "чоловічий" | "муж" | "м" => {
+            Some(Gender::Masculine)
+        }
+        "feminine" | "female" | "f" | "жін" | "жіночий" | "жіноча" | "ж" => {
+            Some(Gender::Feminine)
+        }
         "neutral" | "neuter" | "n" | "невизначений" | "нейтральний" | "середній" | "без роду" => {
             Some(Gender::Neutral)
         }

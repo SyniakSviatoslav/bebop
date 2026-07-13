@@ -168,7 +168,10 @@ pub fn consolidate(mm: &mut LivingMemory, tau_cluster: f64) -> usize {
             let sim = cosine(&bag_vec(a.as_bytes()), &bag_vec(b.as_bytes()));
             if sim >= tau_cluster {
                 let parent_concept = format!("abstract:{}", a);
-                if mm.nodes().contains_key(&format!("{:08x}", simple_hash(parent_concept.as_bytes()))) {
+                if mm
+                    .nodes()
+                    .contains_key(&format!("{:08x}", simple_hash(parent_concept.as_bytes())))
+                {
                     continue; // already consolidated
                 }
                 mm.remember_meta(
@@ -179,7 +182,11 @@ pub fn consolidate(mm: &mut LivingMemory, tau_cluster: f64) -> usize {
                     1.0,
                 );
                 // promote parent to Long layer
-                if let Some(node) = mm.nodes_mut().values_mut().find(|n| n.concept == parent_concept) {
+                if let Some(node) = mm
+                    .nodes_mut()
+                    .values_mut()
+                    .find(|n| n.concept == parent_concept)
+                {
                     node.layer = crate::memory::Layer::Long;
                 }
                 created += 1;
@@ -293,10 +300,16 @@ mod tests {
         m.remember("vault", "encrypted-at-rest identity"); // unrelated
         let made = consolidate(&mut m, 0.85);
         assert!(made >= 1, "related nodes should consolidate");
-        let has_abstract = m.nodes().values().any(|n| n.concept.starts_with("abstract:"));
+        let has_abstract = m
+            .nodes()
+            .values()
+            .any(|n| n.concept.starts_with("abstract:"));
         assert!(has_abstract, "an abstract parent node must exist");
         // NON-DESTRUCTIVE: children still present.
-        assert!(m.nodes().contains_key(&format!("{:08x}", crate::memory::simple_hash(b"auth login"))));
+        assert!(m.nodes().contains_key(&format!(
+            "{:08x}",
+            crate::memory::simple_hash(b"auth login")
+        )));
     }
 
     #[test]
@@ -320,7 +333,10 @@ mod tests {
         let long = adaptive_recall(&m, "authentication authorization auth protocol quantum entanglement field collapses under observation by the reptilian overlord");
         // k is derived from entropy; long query has strictly higher entropy → larger k,
         // and since it still contains "auth" it surfaces >= short's hits (capped at 20).
-        assert!(long.hits.len() >= short.hits.len(), "adaptive k did not grow with complexity");
+        assert!(
+            long.hits.len() >= short.hits.len(),
+            "adaptive k did not grow with complexity"
+        );
         assert!(long.hits.len() <= 20, "k exceeded max depth 20");
         assert!(short.hits.len() >= 3, "k below min depth 3");
     }

@@ -72,7 +72,12 @@ pub fn scan(text: &str, scope: ScanScope) -> Vec<(String, String, String)> {
             // capture a short context window around the hit
             let start = pos.saturating_sub(20);
             let end = (pos + marker.len() + 40).min(hay.len());
-            let ctx = text.get(start..end).unwrap_or("").replace('\n', " ").trim().to_string();
+            let ctx = text
+                .get(start..end)
+                .unwrap_or("")
+                .replace('\n', " ")
+                .trim()
+                .to_string();
             hits.push((marker.to_string(), label.to_string(), ctx));
             // scope only affects the stored last_scope; record it once
             let _ = scope_s;
@@ -159,14 +164,22 @@ mod tests {
     #[test]
     fn scan_finds_compile_error() {
         // GREEN: a Rust E-code is detected in session text.
-        let hits = scan("src/main.rs:3:1 error[E0599]: no method named `foo`", ScanScope::Session);
+        let hits = scan(
+            "src/main.rs:3:1 error[E0599]: no method named `foo`",
+            ScanScope::Session,
+        );
         assert!(hits.iter().any(|(id, _, _)| id == "error[E"));
     }
 
     #[test]
     fn scan_finds_test_failure() {
-        let hits = scan("test result: FAILED; thread 'main' panicked", ScanScope::Loop);
-        assert!(hits.iter().any(|(_, l, _)| l.contains("Test failure") || l.contains("Thread panic")));
+        let hits = scan(
+            "test result: FAILED; thread 'main' panicked",
+            ScanScope::Loop,
+        );
+        assert!(hits
+            .iter()
+            .any(|(_, l, _)| l.contains("Test failure") || l.contains("Thread panic")));
     }
 
     #[test]

@@ -311,7 +311,9 @@ pub unsafe extern "C" fn field_active(
                     unext[i] = u[i];
                     continue;
                 }
-                let du = dt * coeff * lu[i];
+                // BP-04: integrate −coeff·L·u (diffusion/decay), NOT +coeff·L·u
+                // (anti-diffusion). Same sign fix as coherence::propagate.
+                let du = -dt * coeff * lu[i];
                 unext[i] = u[i] + du;
                 if acc_ok {
                     acc.1[i] += fabs(du);

@@ -33,7 +33,12 @@ pub fn render(a: &Square, b: &Square) -> String {
     let mut s = String::new();
     s.push_str(&format!("│ {:<22} │ {:<22} │\n", a.option, b.option));
     s.push_str("├──────────────────────┼──────────────────────┤\n");
-    let rows = a.pros.len().max(a.cons.len()).max(b.pros.len()).max(b.cons.len());
+    let rows = a
+        .pros
+        .len()
+        .max(a.cons.len())
+        .max(b.pros.len())
+        .max(b.cons.len());
     for i in 0..rows {
         let ap = a.pros.get(i).map(|s| s.as_str()).unwrap_or("");
         let bp = b.pros.get(i).map(|s| s.as_str()).unwrap_or("");

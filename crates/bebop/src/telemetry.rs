@@ -41,9 +41,17 @@ fn parse_meminfo() -> (u64, u64) {
     let mut avail = 0u64;
     for line in s.lines() {
         if let Some(v) = line.strip_prefix("MemTotal:") {
-            total = v.split_whitespace().next().and_then(|n| n.parse().ok()).unwrap_or(0);
+            total = v
+                .split_whitespace()
+                .next()
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(0);
         } else if let Some(v) = line.strip_prefix("MemAvailable:") {
-            avail = v.split_whitespace().next().and_then(|n| n.parse().ok()).unwrap_or(0);
+            avail = v
+                .split_whitespace()
+                .next()
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(0);
         }
     }
     (total, avail)

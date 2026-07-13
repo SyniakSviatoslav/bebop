@@ -27,10 +27,10 @@ pub fn scoreboard(tel: &Telemetry, lanes_busy: usize, lanes_max: usize) -> (f32,
 pub fn minimap(nodes: &[(f32, f32)], cols: u16, rows: u16) -> String {
     let mut grid: Vec<Vec<char>> = vec![vec!['·'; cols as usize]; rows as usize];
     for &(x, y) in nodes {
-        let cx = ((x.clamp(0.0, 1.0) * (cols as f32 - 1.0)).round() as usize)
-            .min(cols as usize - 1);
-        let cy = ((y.clamp(0.0, 1.0) * (rows as f32 - 1.0)).round() as usize)
-            .min(rows as usize - 1);
+        let cx =
+            ((x.clamp(0.0, 1.0) * (cols as f32 - 1.0)).round() as usize).min(cols as usize - 1);
+        let cy =
+            ((y.clamp(0.0, 1.0) * (rows as f32 - 1.0)).round() as usize).min(rows as usize - 1);
         grid[cy][cx] = '◆';
     }
     grid.iter()

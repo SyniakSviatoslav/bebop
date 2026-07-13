@@ -38,12 +38,7 @@ pub fn entropy(b: &[f64]) -> f64 {
 
 /// Brute-force (dense) free energy: F = ½ bᵀ L b − H[b], where L = D − A from CSR.
 /// This is the ORACLE used by the spectral path's verification test.
-pub fn free_energy_dense(
-    b: &[f64],
-    row_ptr: &[i32],
-    col_idx: &[i32],
-    degrees: &[f64],
-) -> f64 {
+pub fn free_energy_dense(b: &[f64], row_ptr: &[i32], col_idx: &[i32], degrees: &[f64]) -> f64 {
     let n = b.len();
     // L·b  (L = D − A)
     let mut lb = vec![0.0f64; n];
@@ -94,7 +89,11 @@ pub fn belief_diffuse_step(
     let n = b.len();
     let mut lb = vec![0.0f32; n];
     spec.matvec_f32(b, &mut lb, None);
-    let dt = if dt <= 0.0 { crate::field::DT_STABLE } else { dt };
+    let dt = if dt <= 0.0 {
+        crate::field::DT_STABLE
+    } else {
+        dt
+    };
     let mut sum = 0.0f32;
     for i in 0..n {
         let v = b[i] - dt * beta * lb[i];
@@ -154,7 +153,10 @@ mod tests {
         let n = 8usize;
         let b = vec![1.0 / n as f64; n];
         let h = entropy(&b);
-        assert!((h - (n as f64).ln()).abs() < 1e-12, "H(uniform)=ln n, got {h}");
+        assert!(
+            (h - (n as f64).ln()).abs() < 1e-12,
+            "H(uniform)=ln n, got {h}"
+        );
     }
 
     #[test]
@@ -180,7 +182,11 @@ mod tests {
         }
         let f1 = free_energy_spectral(&spec, &b1);
         let f2 = free_energy_spectral(&spec, &b2);
-        assert!((f1 - f2).abs() > 1e-9, "belief must change F, diff={}", (f1 - f2).abs());
+        assert!(
+            (f1 - f2).abs() > 1e-9,
+            "belief must change F, diff={}",
+            (f1 - f2).abs()
+        );
     }
 
     #[test]
@@ -193,7 +199,10 @@ mod tests {
         let mut out = vec![0.0f32; nn];
         belief_diffuse_step(&spec, &b, crate::field::DT_STABLE, 1.0, &mut out);
         let s: f32 = out.iter().sum();
-        assert!((s - 1.0).abs() < 1e-5, "belief must stay normalized, sum={s}");
+        assert!(
+            (s - 1.0).abs() < 1e-5,
+            "belief must stay normalized, sum={s}"
+        );
         for &v in &out {
             assert!(v >= -1e-6, "belief must stay non-negative, got {v}");
         }

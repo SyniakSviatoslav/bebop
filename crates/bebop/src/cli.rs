@@ -36,7 +36,8 @@ pub fn run() {
                 "list" => {
                     println!("  ⚙ SETTINGS (self-service dictionary):");
                     for e in crate::settings::dictionary() {
-                        let cur = crate::settings::get(e.key).unwrap_or_else(|| e.default.to_string());
+                        let cur =
+                            crate::settings::get(e.key).unwrap_or_else(|| e.default.to_string());
                         println!("    • {} = {}  — {}", e.key, cur, e.description);
                         if !e.allowed.is_empty() {
                             println!("        allowed: {}", e.allowed.join(", "));
@@ -54,18 +55,25 @@ pub fn run() {
                     let k = args.get(3).map(|s| s.as_str()).unwrap_or("");
                     let v = args.get(4).map(|s| s.as_str()).unwrap_or("");
                     match crate::settings::set(k, v) {
-                        Ok(_) => println!("  ✓ {} = {} (set; not persisted across runs — in-memory this session)", k, v),
+                        Ok(_) => println!(
+                            "  ✓ {} = {} (set; not persisted across runs — in-memory this session)",
+                            k, v
+                        ),
                         Err(e) => eprintln!("  ✖ {}", e),
                     }
                 }
-                other => eprintln!("  ✖ unknown settings subcommand: {} (use list|get|set)", other),
+                other => eprintln!(
+                    "  ✖ unknown settings subcommand: {} (use list|get|set)",
+                    other
+                ),
             }
         }
         "drift" => {
             // GLOBAL RULE: scan target+summary for systems-thinking/architecture drift.
             let target = args.get(2).map(|s| s.as_str()).unwrap_or("");
             let summary = args.get(3).map(|s| s.as_str()).unwrap_or("");
-            let d = crate::drift::detect_drift(&crate::drift::DriftPolicy::default(), target, summary);
+            let d =
+                crate::drift::detect_drift(&crate::drift::DriftPolicy::default(), target, summary);
             if d.is_empty() {
                 println!("  ✓ no systems-thinking / architecture drift detected");
             } else {

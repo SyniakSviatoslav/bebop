@@ -19,12 +19,12 @@ impl ChangeKind {
     /// Hermes-like glyph prefix.
     pub fn glyph(self) -> &'static str {
         match self {
-            ChangeKind::Create => "✎", // wrote
-            ChangeKind::Edit => "◆",   // edited
+            ChangeKind::Create => "✎",  // wrote
+            ChangeKind::Edit => "◆",    // edited
             ChangeKind::Delete => "�", // deleted
-            ChangeKind::Run => "↳",    // ran
-            ChangeKind::Config => "⚙", // config
-            ChangeKind::Git => "⎇",    // git
+            ChangeKind::Run => "↳",     // ran
+            ChangeKind::Config => "⚙",  // config
+            ChangeKind::Git => "⎇",     // git
         }
     }
     pub fn verb(self) -> &'static str {

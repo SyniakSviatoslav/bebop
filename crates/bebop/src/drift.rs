@@ -83,14 +83,37 @@ pub fn detect_drift(policy: &DriftPolicy, target: &str, summary: &str) -> Vec<Dr
     let mut out = Vec::new();
     let mut check = |p: Practice, pat: &str, detail: &str| {
         if policy.watch.contains(&p) && hay.contains(pat) {
-            out.push(Drift { practice: p, detail: detail.to_string() });
+            out.push(Drift {
+                practice: p,
+                detail: detail.to_string(),
+            });
         }
     };
-    check(Practice::NewGlobalDep, "add dependency", "introduces a new global dependency");
-    check(Practice::LayerBleed, "cross-layer", "reaches across architectural layers");
-    check(Practice::GodModule, "god module", "module is becoming a god-object");
-    check(Practice::BoundaryRemoved, "remove boundary", "a boundary/red-line gate was removed");
-    check(Practice::LoopIgnored, "ignore loop", "feedback loop / delay ignored in systems change");
+    check(
+        Practice::NewGlobalDep,
+        "add dependency",
+        "introduces a new global dependency",
+    );
+    check(
+        Practice::LayerBleed,
+        "cross-layer",
+        "reaches across architectural layers",
+    );
+    check(
+        Practice::GodModule,
+        "god module",
+        "module is becoming a god-object",
+    );
+    check(
+        Practice::BoundaryRemoved,
+        "remove boundary",
+        "a boundary/red-line gate was removed",
+    );
+    check(
+        Practice::LoopIgnored,
+        "ignore loop",
+        "feedback loop / delay ignored in systems change",
+    );
     out
 }
 
@@ -121,7 +144,11 @@ mod tests {
     #[test]
     fn detects_new_global_dep() {
         // GREEN: "add dependency" → NewGlobalDep drift.
-        let d = detect_drift(&DriftPolicy::default(), "cargo.toml", "add dependency serde");
+        let d = detect_drift(
+            &DriftPolicy::default(),
+            "cargo.toml",
+            "add dependency serde",
+        );
         assert!(d.iter().any(|x| x.practice == Practice::NewGlobalDep));
         assert!(render_drift(&d).contains("new-global-dep"));
     }

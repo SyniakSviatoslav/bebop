@@ -157,7 +157,13 @@ impl LaplacianSpectrum {
 
     /// Chebyshev (matrix-free) propagator over the stored CSR — matches old `field_spectral`
     /// numerically. Returns None on deg<1.
-    pub fn propagate_chebyshev(&self, u0: &[f64], t: f64, coeff: f64, deg: i32) -> Option<Vec<f64>> {
+    pub fn propagate_chebyshev(
+        &self,
+        u0: &[f64],
+        t: f64,
+        coeff: f64,
+        deg: i32,
+    ) -> Option<Vec<f64>> {
         let d: Vec<f64> = self.degrees.iter().map(|&x| x as f64).collect();
         let g = Graph::new(&self.row_ptr, &self.col_idx, &d, self.n);
         spectral_propagate(u0, t, coeff, deg, &g)
@@ -216,7 +222,15 @@ impl LaplacianSpectrum {
 
     /// BRIDGE A — RANK: per-node predicted impact = impact_field(node) · sensitivity(node).
     /// Matches old `field_rank` (uniform sensitivity = 1.0 when `sens` is None).
-    pub fn rank(&self, seed: &[f64], sens: Option<&[f64]>, t: f64, coeff: f64, deg: i32, out: &mut [f64]) -> i32 {
+    pub fn rank(
+        &self,
+        seed: &[f64],
+        sens: Option<&[f64]>,
+        t: f64,
+        coeff: f64,
+        deg: i32,
+        out: &mut [f64],
+    ) -> i32 {
         if self.n == 0 || deg < 1 {
             return 1;
         }
@@ -346,7 +360,7 @@ pub fn sensitivity(out: &mut [f64], history: &[f64], count: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chebyshev::{fexp, fcos, lambda_max};
+    use crate::chebyshev::{fcos, fexp, lambda_max};
 
     /// λmax check against the chebyshev definition.
     #[test]
@@ -355,7 +369,10 @@ mod tests {
         let edges: Vec<(u32, u32)> = (0..19u32).map(|i| (i, i + 1)).collect();
         let spec = LaplacianSpectrum::from_edges(&edges, 20, 4);
         let d: Vec<f64> = spec.degrees.iter().map(|&x| x as f64).collect();
-        assert!((lambda_max(&d) - 2.0 * 2.0).abs() < 1e-9, "path deg≤2 ⇒ lamax=4");
+        assert!(
+            (lambda_max(&d) - 2.0 * 2.0).abs() < 1e-9,
+            "path deg≤2 ⇒ lamax=4"
+        );
     }
 
     #[test]
@@ -363,7 +380,11 @@ mod tests {
         // A connected graph's Laplacian has λ_0 = 0 (the constant eigenmode).
         let edges: Vec<(u32, u32)> = (0..9u32).map(|i| (i, i + 1)).collect();
         let spec = LaplacianSpectrum::from_edges(&edges, 10, 6);
-        assert!(spec.eigenvalues[0].abs() < 1e-9, "λ0 must be 0, got {}", spec.eigenvalues[0]);
+        assert!(
+            spec.eigenvalues[0].abs() < 1e-9,
+            "λ0 must be 0, got {}",
+            spec.eigenvalues[0]
+        );
     }
 
     #[test]
@@ -436,7 +457,10 @@ mod tests {
         let mut sens = vec![1.0f64; 40];
         sens[20] = 5.0;
         let weighted = spec.cost(&seed, Some(&sens), 5.0, 1.0, 30);
-        assert!(weighted > base, "spike must raise cost: base={base} weighted={weighted}");
+        assert!(
+            weighted > base,
+            "spike must raise cost: base={base} weighted={weighted}"
+        );
     }
 
     #[test]
@@ -451,7 +475,10 @@ mod tests {
         let rc = spec.rank(&seed, None, 10.0, 1.0, 30, &mut rank);
         assert_eq!(rc, 0);
         let rank_mass: f64 = rank.iter().sum();
-        assert!((rank_mass - cost).abs() < 1e-9, "rank mass={rank_mass} vs cost={cost}");
+        assert!(
+            (rank_mass - cost).abs() < 1e-9,
+            "rank mass={rank_mass} vs cost={cost}"
+        );
     }
 
     #[test]
@@ -483,7 +510,10 @@ mod tests {
             sens.iter().cloned().fold(0.0f64, f64::max) > 1.0 || sens.iter().any(|&x| x < 1.0),
             "expected non-uniform sensitivity"
         );
-        assert!(sens[0] >= sens[29], "source must be at least as sensitive as far tail");
+        assert!(
+            sens[0] >= sens[29],
+            "source must be at least as sensitive as far tail"
+        );
     }
 
     #[test]

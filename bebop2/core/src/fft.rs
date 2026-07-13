@@ -39,7 +39,10 @@ impl Complex {
     }
     #[inline]
     pub fn conj(self) -> Self {
-        Complex { re: self.re, im: -self.im }
+        Complex {
+            re: self.re,
+            im: -self.im,
+        }
     }
     #[inline]
     pub fn add(self, o: Complex) -> Complex {
@@ -277,8 +280,18 @@ mod tests {
         fft_forward(&mut c);
         fft_inverse(&mut c);
         for (o, r) in orig.iter().zip(c.iter()) {
-            assert!((o.re - r.re).abs() < 1e-12, "roundtrip re {} vs {}", o.re, r.re);
-            assert!((o.im - r.im).abs() < 1e-12, "roundtrip im {} vs {}", o.im, r.im);
+            assert!(
+                (o.re - r.re).abs() < 1e-12,
+                "roundtrip re {} vs {}",
+                o.re,
+                r.re
+            );
+            assert!(
+                (o.im - r.im).abs() < 1e-12,
+                "roundtrip im {} vs {}",
+                o.im,
+                r.im
+            );
         }
     }
 
@@ -297,7 +310,10 @@ mod tests {
         for i in 0..n {
             max_err = max_err.max((c[i].re - inp[i]).abs());
         }
-        assert!(max_err > 1e-9, "corruption should break round-trip, err={max_err}");
+        assert!(
+            max_err > 1e-9,
+            "corruption should break round-trip, err={max_err}"
+        );
     }
 
     #[test]

@@ -32,7 +32,11 @@ pub fn listen() -> Option<String> {
     if !have("whisper-cli") && !have("whisper") {
         return None;
     }
-    let bin = if have("whisper-cli") { "whisper-cli" } else { "whisper" };
+    let bin = if have("whisper-cli") {
+        "whisper-cli"
+    } else {
+        "whisper"
+    };
     let out = Command::new(bin)
         .arg("-m")
         .arg(whisper_model())

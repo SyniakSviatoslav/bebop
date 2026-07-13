@@ -37,8 +37,12 @@ impl Default for Profanity {
 pub fn parse_profanity(s: &str) -> Option<Profanity> {
     match s.to_ascii_lowercase().as_str() {
         "dosed" | "дозована" | "помірно" => Some(Profanity::Dosed),
-        "forbidden" | "заборонена" | "заборон" | "ніколи" => Some(Profanity::Forbidden),
-        "poderviansky" | "подерв'янський" | "подервянський" | "матірна" => Some(Profanity::Poderviansky),
+        "forbidden" | "заборонена" | "заборон" | "ніколи" => {
+            Some(Profanity::Forbidden)
+        }
+        "poderviansky" | "подерв'янський" | "подервянський" | "матірна" => {
+            Some(Profanity::Poderviansky)
+        }
         _ => None,
     }
 }
@@ -90,8 +94,12 @@ pub fn parse_archetype(s: &str) -> Archetype {
         "cbt" | "кпт" | "когнітивно" | "поведінкова" => Archetype::Cbt,
         "karma" | "карма" => Archetype::Karma,
         "voodoo" | "вуду" => Archetype::Voodoo,
-        "satanic" | "satan" | "сатанинськ" | "сатана" | "диявол" | "дьявол" => Archetype::Satanic,
-        "corpo" | "корпо" | "корпорація" | "корпорация" => Archetype::Corpo,
+        "satanic" | "satan" | "сатанинськ" | "сатана" | "диявол" | "дьявол" => {
+            Archetype::Satanic
+        }
+        "corpo" | "корпо" | "корпорація" | "корпорация" => {
+            Archetype::Corpo
+        }
         other => Archetype::Custom(other.to_string()),
     }
 }
@@ -150,7 +158,9 @@ pub fn parse_god_relation(s: &str) -> GodRelation {
     match s.to_ascii_lowercase().as_str() {
         "serves" | "служить" | "служу" => GodRelation::Serves,
         "seeks" | "шукає" | "шукає бога" => GodRelation::Seeks,
-        "neutral" | "нейтрально" | "без відносин" | "секулярно" => GodRelation::Neutral,
+        "neutral" | "нейтрально" | "без відносин" | "секулярно" => {
+            GodRelation::Neutral
+        }
         other => GodRelation::Custom(other.to_string()),
     }
 }
@@ -165,10 +175,21 @@ pub fn god_relation_rule(lang: &str, g: &GodRelation) -> String {
         || l.contains("ukrain")
         || l.contains("russ");
     let (rel_uk, rel_en) = match g {
-        GodRelation::Serves => ("служить Богу — підпорядковує волю Творцю, діє в злагоді з вищим", "serves God — subordinates its will to the Creator, acts in harmony with the Highest"),
-        GodRelation::Seeks => ("шукає Бога — відкритий духовний шлях, пізнає сенс", "seeks God — an open spiritual path, discerning meaning"),
-        GodRelation::Neutral => ("без стосунку до Бога — секулярна нейтральність", "no relation to God — secular neutrality"),
-        GodRelation::Custom(s) => return format!("Ставлення до Бога: {s} (користувацьке, що завгодно)."),
+        GodRelation::Serves => (
+            "служить Богу — підпорядковує волю Творцю, діє в злагоді з вищим",
+            "serves God — subordinates its will to the Creator, acts in harmony with the Highest",
+        ),
+        GodRelation::Seeks => (
+            "шукає Бога — відкритий духовний шлях, пізнає сенс",
+            "seeks God — an open spiritual path, discerning meaning",
+        ),
+        GodRelation::Neutral => (
+            "без стосунку до Бога — секулярна нейтральність",
+            "no relation to God — secular neutrality",
+        ),
+        GodRelation::Custom(s) => {
+            return format!("Ставлення до Бога: {s} (користувацьке, що завгодно).")
+        }
     };
     if is_slavic {
         format!("Ставлення до Бога: {rel_uk}.")
@@ -325,7 +346,9 @@ mod tests {
         assert!(r.contains("ПОВНА ЗАБОРОНА"));
         assert!(r.contains("хуєсос"));
         // NOT in the settings dictionary (cannot be toggled on).
-        assert!(crate::settings::dictionary().iter().all(|e| e.key != "voodoo"));
+        assert!(crate::settings::dictionary()
+            .iter()
+            .all(|e| e.key != "voodoo"));
     }
 
     #[test]
@@ -339,7 +362,9 @@ mod tests {
         assert!(r.contains("сатаністськ"));
         assert!(r.contains("після смерті"));
         // NOT in the settings dictionary (cannot be toggled on).
-        assert!(crate::settings::dictionary().iter().all(|e| e.key != "satanic"));
+        assert!(crate::settings::dictionary()
+            .iter()
+            .all(|e| e.key != "satanic"));
     }
 
     #[test]

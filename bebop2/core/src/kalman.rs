@@ -92,7 +92,10 @@ pub struct DenseMat {
 
 impl DenseMat {
     pub fn zeros(n: usize) -> Self {
-        DenseMat { n, m: vec![0.0; n * n] }
+        DenseMat {
+            n,
+            m: vec![0.0; n * n],
+        }
     }
     #[inline]
     pub fn get(&self, i: usize, j: usize) -> f64 {
@@ -213,8 +216,8 @@ impl SpectralKalman {
             // Λ is real-diagonal for the reference systems, so Λᵀ = Λ).
             for i in 0..n {
                 for j in 0..n {
-                    acc[i * n + j] = self.lambda[i] * acc[i * n + j] * self.lambda[j]
-                        + self.q_diag[i * n + j];
+                    acc[i * n + j] =
+                        self.lambda[i] * acc[i * n + j] * self.lambda[j] + self.q_diag[i * n + j];
                 }
             }
         }
@@ -329,7 +332,11 @@ mod tests {
         let ps = dense_kalman_p(&a, &q_small, &p0, steps, n);
         let pb = dense_kalman_p(&a, &q_big, &p0, steps, n);
         for i in 0..n * n {
-            assert!(pb[i] >= ps[i] - 1e-12, "bigger Q should not shrink P[{}]", i);
+            assert!(
+                pb[i] >= ps[i] - 1e-12,
+                "bigger Q should not shrink P[{}]",
+                i
+            );
         }
     }
 

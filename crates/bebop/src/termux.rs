@@ -71,7 +71,10 @@ impl Termux {
         let mut out = Vec::new();
         for t in self.tools.values() {
             if t.dual_use && !self.dual_use {
-                out.push(format!("  • {} [needs --dual-use] — {}", t.name, t.description));
+                out.push(format!(
+                    "  • {} [needs --dual-use] — {}",
+                    t.name, t.description
+                ));
             } else {
                 out.push(format!("  • {} — {}", t.name, t.description));
             }
@@ -128,7 +131,10 @@ mod tests {
     fn dual_use_off_blocks_operational() {
         let mut t = Termux::new();
         t.set_dual_use(false);
-        assert!(t.authorize("nmap").is_err(), "dual-use blocked when flag off");
+        assert!(
+            t.authorize("nmap").is_err(),
+            "dual-use blocked when flag off"
+        );
     }
 
     #[test]
@@ -158,6 +164,9 @@ mod tests {
     #[test]
     fn safe_tool_runs_without_flag() {
         let t = Termux::new();
-        assert!(t.authorize("termux-api").is_ok(), "non-dual tool runs anytime");
+        assert!(
+            t.authorize("termux-api").is_ok(),
+            "non-dual tool runs anytime"
+        );
     }
 }

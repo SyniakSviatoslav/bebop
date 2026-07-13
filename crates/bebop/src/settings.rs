@@ -20,17 +20,82 @@ pub struct SettingEntry {
 /// The full dictionary — every tunable axis, with a plain-language description.
 pub fn dictionary() -> Vec<SettingEntry> {
     vec![
-        SettingEntry { key: "gender", description: "Граматичний рід + стиль спілкування агента", default: "masculine", allowed: &["masculine", "feminine", "neutral"] },
-        SettingEntry { key: "profanity", description: "Рівень нецензурної лексики", default: "poderviansky", allowed: &["dosed", "forbidden", "poderviansky"] },
-        SettingEntry { key: "archetype", description: "Архетип/тема (співпраця чи антагоніст); відьми/КПТ/карма вимкнені за замовчуванням", default: "corpo", allowed: &["reptiles", "contrabandists", "aliens", "witches", "cbt", "karma", "corpo", "custom"] },
-        SettingEntry { key: "god_relation", description: "Ставлення до Бога", default: "serves", allowed: &["serves", "seeks", "neutral", "custom"] },
-        SettingEntry { key: "lanes_on", description: "Паралельні сесії (lanes) увімкнені", default: "true", allowed: &["true", "false"] },
-        SettingEntry { key: "max_lanes", description: "Максимум паралельних lane", default: "4", allowed: &[] },
-        SettingEntry { key: "auto_intent", description: "Авторежим: мета→до виконання, луп→пропозиція", default: "true", allowed: &["true", "false"] },
-        SettingEntry { key: "change_visibility", description: "Показ ключових змін/дій (Hermes-стиль)", default: "true", allowed: &["true", "false"] },
-        SettingEntry { key: "destructive_policy", description: "Що вважати деструктивною/критичною зміною", default: "default", allowed: &["default", "relaxed", "strict"] },
-        SettingEntry { key: "system_thinking_drift", description: "Вказувати в CLI на дрейф системного мислення/архітектури", default: "true", allowed: &["true", "false"] },
-        SettingEntry { key: "descartes_square", description: "Авто-таблиці порівняння (про/проти) при змінах/дослідженні", default: "true", allowed: &["true", "false"] },
+        SettingEntry {
+            key: "gender",
+            description: "Граматичний рід + стиль спілкування агента",
+            default: "masculine",
+            allowed: &["masculine", "feminine", "neutral"],
+        },
+        SettingEntry {
+            key: "profanity",
+            description: "Рівень нецензурної лексики",
+            default: "poderviansky",
+            allowed: &["dosed", "forbidden", "poderviansky"],
+        },
+        SettingEntry {
+            key: "archetype",
+            description:
+                "Архетип/тема (співпраця чи антагоніст); відьми/КПТ/карма вимкнені за замовчуванням",
+            default: "corpo",
+            allowed: &[
+                "reptiles",
+                "contrabandists",
+                "aliens",
+                "witches",
+                "cbt",
+                "karma",
+                "corpo",
+                "custom",
+            ],
+        },
+        SettingEntry {
+            key: "god_relation",
+            description: "Ставлення до Бога",
+            default: "serves",
+            allowed: &["serves", "seeks", "neutral", "custom"],
+        },
+        SettingEntry {
+            key: "lanes_on",
+            description: "Паралельні сесії (lanes) увімкнені",
+            default: "true",
+            allowed: &["true", "false"],
+        },
+        SettingEntry {
+            key: "max_lanes",
+            description: "Максимум паралельних lane",
+            default: "4",
+            allowed: &[],
+        },
+        SettingEntry {
+            key: "auto_intent",
+            description: "Авторежим: мета→до виконання, луп→пропозиція",
+            default: "true",
+            allowed: &["true", "false"],
+        },
+        SettingEntry {
+            key: "change_visibility",
+            description: "Показ ключових змін/дій (Hermes-стиль)",
+            default: "true",
+            allowed: &["true", "false"],
+        },
+        SettingEntry {
+            key: "destructive_policy",
+            description: "Що вважати деструктивною/критичною зміною",
+            default: "default",
+            allowed: &["default", "relaxed", "strict"],
+        },
+        SettingEntry {
+            key: "system_thinking_drift",
+            description: "Вказувати в CLI на дрейф системного мислення/архітектури",
+            default: "true",
+            allowed: &["true", "false"],
+        },
+        SettingEntry {
+            key: "descartes_square",
+            description: "Авто-таблиці порівняння (про/проти) при змінах/дослідженні",
+            default: "true",
+            allowed: &["true", "false"],
+        },
     ]
 }
 
@@ -51,7 +116,11 @@ pub fn set(key: &str, val: &str) -> Result<(), String> {
     let entry = dictionary().into_iter().find(|e| e.key == key);
     let entry = match entry {
         Some(e) => e,
-        None => return Err(format!("unknown setting: {key} (run `bebop settings list`)")),
+        None => {
+            return Err(format!(
+                "unknown setting: {key} (run `bebop settings list`)"
+            ))
+        }
     };
     if !entry.allowed.is_empty() && !entry.allowed.contains(&val) {
         return Err(format!(

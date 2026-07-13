@@ -102,20 +102,19 @@ pub struct Graph<'a> {
 
 impl<'a> Graph<'a> {
     pub fn new(row_ptr: &'a [i32], col_idx: &'a [i32], degrees: &'a [f64], n: usize) -> Self {
-        Graph { row_ptr, col_idx, degrees, n }
+        Graph {
+            row_ptr,
+            col_idx,
+            degrees,
+            n,
+        }
     }
 }
 
 /// A. SPECTRAL PROPAGATOR core — Chebyshev approximation of u(t) = exp(-coeff·L·t)·u0.
 /// One-shot, matrix-free. Returns the n-vector (or None on invalid input: deg<1).
 /// Bit-equivalent to old `rust-core::spectral_propagate`.
-pub fn spectral_propagate(
-    xs: &[f64],
-    t: f64,
-    coeff: f64,
-    deg: i32,
-    g: &Graph,
-) -> Option<Vec<f64>> {
+pub fn spectral_propagate(xs: &[f64], t: f64, coeff: f64, deg: i32, g: &Graph) -> Option<Vec<f64>> {
     let n = xs.len();
     if n == 0 || deg < 1 {
         return None;
@@ -248,11 +247,23 @@ mod tests {
     fn fexp_libm_sanity() {
         // GREEN: old `test_fexp_libm_sanity` mirrored locally (C8 already fixed, but re-verify here).
         assert!((fexp(0.0) - 1.0).abs() < 1e-12);
-        assert!((fexp(1.0) - core::f64::consts::E).abs() < 1e-9, "fexp(1)={}", fexp(1.0));
+        assert!(
+            (fexp(1.0) - core::f64::consts::E).abs() < 1e-9,
+            "fexp(1)={}",
+            fexp(1.0)
+        );
         // F3 RED: the old local fexp used `fround=ftrunc(x+0.5)`, WRONG for x<0.
         // This must hold for negatives (the production field.rs decay path hits x<0).
-        assert!((fexp(-1.0) - (-1.0f64).exp()).abs() < 1e-9, "fexp(-1)={}", fexp(-1.0));
-        assert!((fexp(-3.0) - (-3.0f64).exp()).abs() < 1e-9, "fexp(-3)={}", fexp(-3.0));
+        assert!(
+            (fexp(-1.0) - (-1.0f64).exp()).abs() < 1e-9,
+            "fexp(-1)={}",
+            fexp(-1.0)
+        );
+        assert!(
+            (fexp(-3.0) - (-3.0f64).exp()).abs() < 1e-9,
+            "fexp(-3)={}",
+            fexp(-3.0)
+        );
         // symmetry: fexp(x)*fexp(-x) == 1 for all x (old code failed this for negatives).
         for x in [-3.0, -1.5, -0.25, 0.0, 0.5, 2.0, 7.0] {
             let p = fexp(x) * fexp(-x);

@@ -21,8 +21,14 @@ pub const SHA512: &[(&str, &str)] = &[
 
 /// FIPS 202 SHA3-256: (input hex, expected digest hex).
 pub const SHA3_256: &[(&str, &str)] = &[
-    ("", "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a"),
-    ("616263", "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532"),
+    (
+        "",
+        "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a",
+    ),
+    (
+        "616263",
+        "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532",
+    ),
 ];
 
 /// draft-irtf-cfrg-xchacha-03 §2.2.1 HChaCha20.

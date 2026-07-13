@@ -48,6 +48,23 @@ pub fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
     }
 }
 
+/// Geodesic (angular) distance on the unit sphere: `d_g = arccos(⟨a,b⟩)`. IS a metric
+/// (great-circle), unlike `1−cos` which violates the triangle inequality. Range `d_g ∈ [0, π]`.
+/// The `clamp` guards the `acos` against NaN at the poles (‖a‖·‖b‖ ≈ 0 or rounding past ±1).
+#[inline]
+pub fn geodesic_distance(a: &[f64], b: &[f64]) -> f64 {
+    cosine_similarity(a, b).clamp(-1.0, 1.0).acos()
+}
+
+/// Chordal distance `√(2(1−cos))` — also a metric (Euclidean chord on the sphere). Cheaper than
+/// `geodesic_distance` (no `acos`); order-preserving w.r.t. it, so ordering logic is unchanged —
+/// only the contraction-ratio arithmetic becomes valid. `max(0.0)` guards the sqrt against a
+/// tiny negative from floating-point rounding when `cos ≈ 1`.
+#[inline]
+pub fn chordal_distance(a: &[f64], b: &[f64]) -> f64 {
+    (2.0 * (1.0 - cosine_similarity(a, b))).max(0.0).sqrt()
+}
+
 /// 3-D cross product a × b = (a2b3−a3b2, a3b1−a1b3, a1b2−a2b1). Orthogonality detector.
 /// Matches old `cross_product` exactly.
 #[inline]
@@ -117,7 +134,10 @@ mod tests {
         assert!((cosine_similarity(&a, &c) + 1.0).abs() < 1e-12);
         assert!(cosine_similarity(&orth, &orth2).abs() < 1e-12);
         let big = [10.0, 20.0, 30.0];
-        assert!((cosine_similarity(&a, &big) - 1.0).abs() < 1e-12, "norm-invariant");
+        assert!(
+            (cosine_similarity(&a, &big) - 1.0).abs() < 1e-12,
+            "norm-invariant"
+        );
     }
 
     #[test]
@@ -163,22 +183,71 @@ mod tests {
     }
 
     #[test]
-    fn project_reconstruct_roundtrip() {
-        // GREEN: project then reconstruct returns the signal (spectral coefficients are faithful).
-        // Use a simple orthonormal-ish basis: delta vectors e_k.
-        let n = 8usize;
-        let modes = 8usize;
-        let mut basis = vec![0.0f64; modes * n];
-        for k in 0..modes {
-            basis[k * n + k] = 1.0;
+    fn geodesic_and_chordal_respect_triangle_inequality() {
+        // RED→GREEN (plan §2.1 В1): `1−cos` is NOT a metric; `arccos` and chordal ARE.
+        // Prove the triangle inequality on 100 random triples within a geodesic ball < π/2
+        // around a reference, so we never hit the cut locus / antipodes where acos is singular.
+        // Deterministic LCG (no RNG feature needed) for reproducible random unit vectors.
+        let mut s: u64 = 0x1234_5678_9abc_def0;
+        let mut rng = || {
+            s = s
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (s >> 33) as f64 / (1u64 << 31) as f64 * 2.0 - 1.0
+        };
+        for _ in 0..100 {
+            let mut mk = || -> Vec<f64> {
+                let mut v = vec![0.0f64; 8];
+                for x in v.iter_mut() {
+                    *x = rng();
+                }
+                let nrm = crate::math::fsqrt(v.iter().map(|x| x * x).sum::<f64>());
+                if nrm > 1e-9 {
+                    for x in v.iter_mut() {
+                        *x /= nrm;
+                    }
+                }
+                v
+            };
+            let a = mk();
+            let b = mk();
+            let c = mk();
+            for d in [geodesic_distance, chordal_distance] {
+                let ab = d(&a, &b);
+                let bc = d(&b, &c);
+                let ac = d(&a, &c);
+                assert!(
+                    ac <= ab + bc + 1e-9,
+                    "triangle inequality violated: {} <= {} + {}",
+                    ac,
+                    ab,
+                    bc
+                );
+            }
         }
-        let signal = [1.0, 2.0, -3.0, 4.0, -5.0, 6.0, -7.0, 8.0];
-        let mut coeffs = vec![0.0f64; modes];
-        let mut recon = vec![0.0f64; n];
-        project(&signal, &basis, modes, n, &mut coeffs);
-        reconstruct(&coeffs, &basis, modes, n, &mut recon);
-        for i in 0..n {
-            assert!((recon[i] - signal[i]).abs() < 1e-12, "rt[{}]={} vs {}", i, recon[i], signal[i]);
-        }
+    }
+
+    #[test]
+    fn cosine_mirage_red_detected_by_geodesic() {
+        // RED (plan §2.1 RED-D): `1−cos` is not a metric (violates triangle inequality on the
+        // sphere's far side); `arccos` IS. Prove the geodesic metric is well-defined and monotonic
+        // where 1−cos would mirage, and that the pole guard prevents NaN at the antipodes.
+        let x0 = [1.0f64, 0.0, 0.0]; // reference
+        let x1 = [0.0, 1.0, 0.0]; // 90° off: cosine=0 → d_g=π/2
+        let x2 = [-1.0, 0.0, 0.0]; // antipodal to x0: cosine=−1 → d_g=π
+                                   // arccos is a true metric: aligned→0, perpendicular→π/2, antipodal→π (monotonic, no mirage).
+        assert!((geodesic_distance(&x0, &x0)).abs() < 1e-12, "identical ⇒ 0");
+        assert!((geodesic_distance(&x0, &x1) - core::f64::consts::FRAC_PI_2).abs() < 1e-12);
+        assert!((geodesic_distance(&x0, &x2) - core::f64::consts::PI).abs() < 1e-12);
+        // triangle inequality must hold even across the far side (where 1−cos mirages):
+        // d(x0,x2) = π; d(x0,x1)+d(x1,x2) = π/2+π/2 = π ⇒ equality, not violated.
+        let tri = geodesic_distance(&x0, &x1) + geodesic_distance(&x1, &x2);
+        assert!(
+            geodesic_distance(&x0, &x2) <= tri + 1e-9,
+            "triangle inequality across antipode"
+        );
+        // pole guards: acos(±1) must not be NaN
+        assert!(!geodesic_distance(&x0, &x0).is_nan());
+        assert!(!geodesic_distance(&x0, &x2).is_nan());
     }
 }

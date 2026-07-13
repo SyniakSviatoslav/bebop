@@ -27,7 +27,13 @@ pub fn padded_dim(n: usize) -> usize {
 ///
 /// `out` receives the result (length = `a.len()` == `b.len()`); the FFT is computed on the
 /// padded power-of-two length internally (caller scratch `scratch_a`/`scratch_b` must be ≥ padded).
-pub fn bind(a: &[f64], b: &[f64], out: &mut [f64], scratch_a: &mut [Complex], scratch_b: &mut [Complex]) {
+pub fn bind(
+    a: &[f64],
+    b: &[f64],
+    out: &mut [f64],
+    scratch_a: &mut [Complex],
+    scratch_b: &mut [Complex],
+) {
     debug_assert!(a.len() == b.len() && a.len() == out.len());
     let n = a.len();
     let m = padded_dim(n);
@@ -57,7 +63,13 @@ pub fn bind(a: &[f64], b: &[f64], out: &mut [f64], scratch_a: &mut [Complex], sc
 /// product by |FFT(a)|² and conjugate. For BINARY (±1) hypervectors |FFT(a)| = 1 (for the
 /// standard embedding), so this reduces to the exact inverse and `unbind(bind(a,b), a) == b`
 /// to machine precision. c_k = conj(A_k) · (AB)_k / |A_k|².
-pub fn unbind(x: &[f64], a: &[f64], out: &mut [f64], scratch_x: &mut [Complex], scratch_a: &mut [Complex]) {
+pub fn unbind(
+    x: &[f64],
+    a: &[f64],
+    out: &mut [f64],
+    scratch_x: &mut [Complex],
+    scratch_a: &mut [Complex],
+) {
     debug_assert!(x.len() == a.len() && x.len() == out.len());
     let n = x.len();
     let m = padded_dim(n);
@@ -77,7 +89,11 @@ pub fn unbind(x: &[f64], a: &[f64], out: &mut [f64], scratch_x: &mut [Complex], 
         let ak = scratch_a[i];
         let mag2 = ak.norm_sq();
         // deconvolution: conj(A) * X / |A|^2 ; guard against tiny |A| (numerical zero)
-        let inv = if mag2 > 1e-30 { scratch_x[i].mul(ak.conj()).scale(1.0 / mag2) } else { Complex::zero() };
+        let inv = if mag2 > 1e-30 {
+            scratch_x[i].mul(ak.conj()).scale(1.0 / mag2)
+        } else {
+            Complex::zero()
+        };
         scratch_x[i] = inv;
     }
     fft_inverse(scratch_x);
@@ -143,8 +159,16 @@ mod tests {
         let mut a = vec![0.0f64; n];
         let mut b = vec![0.0f64; n];
         for i in 0..n {
-            a[i] = if (i as f64 * 2.399963).sin() >= 0.0 { 1.0 } else { -1.0 };
-            b[i] = if (i as f64 * 3.714567 + 0.5).sin() >= 0.0 { 1.0 } else { -1.0 };
+            a[i] = if (i as f64 * 2.399963).sin() >= 0.0 {
+                1.0
+            } else {
+                -1.0
+            };
+            b[i] = if (i as f64 * 3.714567 + 0.5).sin() >= 0.0 {
+                1.0
+            } else {
+                -1.0
+            };
         }
         let mut ab = vec![0.0f64; n];
         let (mut sa1, mut sb1) = make_scratches(n);
@@ -200,7 +224,12 @@ mod tests {
             brute[k] = s;
         }
         for i in 0..n {
-            assert!((out[i] - brute[i]).abs() < 1e-9, "bind != brute at {i}: {} vs {}", out[i], brute[i]);
+            assert!(
+                (out[i] - brute[i]).abs() < 1e-9,
+                "bind != brute at {i}: {} vs {}",
+                out[i],
+                brute[i]
+            );
         }
     }
 
@@ -238,7 +267,10 @@ mod tests {
             gap_wrong += (rec_wrong[i] - b[i]).abs();
         }
         // the gap with the wrong key must be meaningfully larger than the ~0 correct gap
-        assert!(gap_wrong > 0.5, "wrong-key round-trip should diverge, gap={gap_wrong}");
+        assert!(
+            gap_wrong > 0.5,
+            "wrong-key round-trip should diverge, gap={gap_wrong}"
+        );
         // sanity: the correct key gives gap ≈ 0
         let mut rec_right = vec![0.0f64; n];
         let (mut sx2, mut sa4) = make_scratches(n);
@@ -247,7 +279,10 @@ mod tests {
         for i in 0..n {
             gap_right += (rec_right[i] - b[i]).abs();
         }
-        assert!(gap_right < 1e-9, "right-key gap should be ≈0, got {gap_right}");
+        assert!(
+            gap_right < 1e-9,
+            "right-key gap should be ≈0, got {gap_right}"
+        );
     }
 
     #[test]

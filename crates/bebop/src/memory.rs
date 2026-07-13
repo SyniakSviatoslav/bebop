@@ -226,8 +226,14 @@ mod tests {
             "evicted node was permanently deleted; it must be preserved in the attic"
         );
         // Restore path brings it back into the live map unchanged.
-        assert!(m.restore(&id), "restore() failed to recover node from attic");
-        assert!(m.nodes().contains_key(&id), "node not restored into live map");
+        assert!(
+            m.restore(&id),
+            "restore() failed to recover node from attic"
+        );
+        assert!(
+            m.nodes().contains_key(&id),
+            "node not restored into live map"
+        );
         assert_eq!(m.size(), 1);
         assert_eq!(m.attic_size(), 0, "restored node should leave the attic");
         // Raw payload preserved across eviction + restore.

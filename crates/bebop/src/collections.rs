@@ -138,7 +138,9 @@ pub fn list_in_dir(dir: &Path) -> Vec<String> {
             .filter_map(|e| {
                 let p = e.path();
                 if p.extension().map(|x| x == "toml").unwrap_or(false) {
-                    p.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string())
+                    p.file_stem()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.to_string())
                 } else {
                     None
                 }
@@ -336,7 +338,10 @@ mod tests {
         };
         let _ = add_in_dir("default", lib, &dir);
         let c = install_in_dir("default", false, &dir);
-        assert!(!c.enabled, "dual-use lib must block install without --force");
+        assert!(
+            !c.enabled,
+            "dual-use lib must block install without --force"
+        );
         let c2 = install_in_dir("default", true, &dir);
         assert!(c2.enabled, "--force overrides the vuln gate");
     }

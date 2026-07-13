@@ -569,7 +569,11 @@ mod tests {
     fn kat_blake2b_abc() {
         let got = blake2b_hash(64, b"abc");
         let want = "ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923";
-        assert_eq!(hex(&got), want, "BLAKE2b-512(\"abc\") must match RFC 7693 KAT");
+        assert_eq!(
+            hex(&got),
+            want,
+            "BLAKE2b-512(\"abc\") must match RFC 7693 KAT"
+        );
     }
 
     // Argon2id (RFC 9106 §5.3): m=32 KiB, t=3, p=4, tag=32 B.

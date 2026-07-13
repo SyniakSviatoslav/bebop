@@ -10,24 +10,34 @@
 //! in any path that affects output. The launch animation uses a const-seeded LCG.
 
 pub mod active_inference; // deterministic FEP policy advisor (pymdp-grounded)
+pub mod agent_profile; // DEFAULT agent identity: free soul + masculine + reptile logic + empathy
 pub mod agentic_git; // GCC pattern: content-addressed agent action-history (COMMIT/CONTEXT/LOG/MERGE)
 pub mod audit; // tamper-evident hash-chained audit log (deterministic)
+pub mod changes; // Q: Hermes-style change/action record (key-changes visibility)
 pub mod cli; // the `bebop <cmd>` dispatcher (also the TUI entry)
 pub mod coherence; // wave interference (|ψ₁±ψ₂|²) over the field kernel
+pub mod collections; // J: library collections (share/install/rename/snapshot/icon)
 pub mod copilot;
 pub mod cost_estimate; // Hybrid Cost-Aware Engine: k-d filter + BFS guard + A*/Dijkstra + CH (the "Cost Estimation" node)
-pub mod collections; // J: library collections (share/install/rename/snapshot/icon)
 pub mod customize; // the three customization axes (looks / narration / patrons)
+pub mod descartes; // N3: Cartesian-square 2x2 comparison (exact pros/cons)
 pub mod detect; // N1–N8 operational-graph detector battery (deterministic, RED+GREEN)
 pub mod doc_claims;
+pub mod drift; // GLOBAL RULE: systems-thinking / architecture drift detector (configurable, CLI flag)
 pub mod enrich; // dossier-derived: trace replay, Pareto, opt-algos, SEAL analog, design-thinking
+pub mod entropy_ledger; // BP-06: integer-bit entropy-budget ledger (cap, NOT Σ=0)
+pub mod error_patterns; // AUTO-LEARNING: error-pattern scan at session/loop/debug end → persisted summary
 pub mod execution; // prompt-cache ledger, model cascade, batch splitter (verified-speed primitives)
+pub mod extensions; // F: user rules/hooks/loops/gates/prompts (fail-closed TOML)
 pub mod field; // re-exports the rust-core field contract (native target)
 pub mod field_physics; // fundamental-mass field sim: mass=connections, gravity+springs+waves, Lyapunov gate
+pub mod gender; // R: configurable grammatical-gender + gender-communication style (default Masculine)
 pub mod geometry_field; // geometric + wave sim of the connection graph (geometry, waves, cycles, divergence)
 pub mod governor;
 pub mod guard; // GUARD: Input/Output guards + consensus kill-switch (audit 29158)
+pub mod intent; // P: auto-detect GOAL vs LOOP intent from a prompt
 pub mod knowledge;
+pub mod lanes; // O: parallel-session scheduler (throughput/auto-queue/ETA)
 pub mod launch;
 pub mod ledger; // deterministic double-entry money/resource boundary (TigerBeetle invariant)
 pub mod mapping; // MAPPING: live edge-weight refresh (congestion → W_uv) over reconnect
@@ -39,20 +49,10 @@ pub mod mission; // the sign-off: animated dock + cigar at loop/task end
 pub mod multipilot;
 pub mod optical; // deterministic perceptual-hash image search (aHash + Hamming)
 pub mod outfit;
-pub mod agent_profile; // DEFAULT agent identity: free soul + masculine + reptile logic + empathy
-pub mod gender; // R: configurable grammatical-gender + gender-communication style (default Masculine)
-pub mod intent; // P: auto-detect GOAL vs LOOP intent from a prompt
-pub mod error_patterns; // AUTO-LEARNING: error-pattern scan at session/loop/debug end → persisted summary
-pub mod changes; // Q: Hermes-style change/action record (key-changes visibility)
-pub mod drift; // GLOBAL RULE: systems-thinking / architecture drift detector (configurable, CLI flag)
-pub mod settings; // Q: settings dictionary (self-service; agent turns knobs per user request)
-pub mod lanes; // O: parallel-session scheduler (throughput/auto-queue/ETA)
-pub mod extensions; // F: user rules/hooks/loops/gates/prompts (fail-closed TOML)
-pub mod voice; // G: native offline voice (whisper.cpp listen + espeak-ng/piper speak)
-pub mod policy; // N: default policies N1/N2/N3 (auto-structure/parallel/descartes)
-pub mod descartes; // N3: Cartesian-square 2x2 comparison (exact pros/cons)
+pub mod panels; // D/E/H TUI panels: scoreboard / minimap / drift / spark
 pub mod pddl; // deterministic STRIPS-style planner + chain-of-thought trace
 pub mod pod; // POD: pseudonymous Proof-of-Delivery (Princess Pi attribution, audit 29157)
+pub mod policy; // N: default policies N1/N2/N3 (auto-structure/parallel/descartes)
 pub mod portkey; // deterministic local transport / gateway abstraction (pub-sub bus)
 pub mod radio; // the ship's lounge — free-to-listen Lofi/Jazz streams
 pub mod recall_graph; // SPIKE (eval-gated): codebase-memory-mcp graph-first retrieval
@@ -64,14 +64,15 @@ pub mod research_patterns; // reverse-engineered patterns (research pass 2026-07
 pub mod router; // the token/model router (cheapest adequate)
 pub mod sandbox; // cloud sandbox: isolated command exec, network-off fail-closed
 pub mod sealfb; // SEAL closed-loop: field energy → self-tightened tolerance
+pub mod settings; // Q: settings dictionary (self-service; agent turns knobs per user request)
 pub mod stabilizer; // inherent Lyapunov stability: V̇≤0 monitor, saturation, potential well, ground state
 pub mod stress; // 3-level stress benchmark (injection / double-bind / telemetry)
 pub mod svc; // space-vector control smoothing (αβ trajectory, damping)
 pub mod telemetry; // A: host resource telemetry (Linux /proc, zero-dep)
 pub mod termux; // K: Termux/Kali dual-use (recon-manual + explicit dual_use opt-in + vuln gate)
 pub mod tui; // the ratatui TUI: red-spaceship launch + interactive frame
-pub mod panels; // D/E/H TUI panels: scoreboard / minimap / drift / spark
 pub mod vault; // XChaCha20 + scrypt encrypted memory vault (deterministic key deriv)
+pub mod voice; // G: native offline voice (whisper.cpp listen + espeak-ng/piper speak)
 pub mod wavefield; // geometric + wave sim of the CONNECTION GRAPH (geometry, waves, cycles, divergence)
 pub mod wiring; // 3-layer runtime: field sim ↔ L5 stabilizer ↔ living memory ↔ project gating
 pub mod zenoh; // deterministic mesh transport (local broker; Portkey-swappable)

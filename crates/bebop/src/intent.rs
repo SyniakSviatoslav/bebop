@@ -28,9 +28,24 @@ impl Default for Intent {
 pub fn detect(prompt: &str) -> Intent {
     let p = prompt.to_ascii_lowercase();
     const LOOP_MARKERS: &[&str] = &[
-        "every", "loop", "each ", "each time", "repeatedly", "whenever",
-        "每隔", "循环", "цикл", "луп", "серія", "серій", "постійно",
-        "times", " n ", "n раз", "щодня", "per run",
+        "every",
+        "loop",
+        "each ",
+        "each time",
+        "repeatedly",
+        "whenever",
+        "每隔",
+        "循环",
+        "цикл",
+        "луп",
+        "серія",
+        "серій",
+        "постійно",
+        "times",
+        " n ",
+        "n раз",
+        "щодня",
+        "per run",
     ];
     if LOOP_MARKERS.iter().any(|m| p.contains(m)) {
         Intent::Loop

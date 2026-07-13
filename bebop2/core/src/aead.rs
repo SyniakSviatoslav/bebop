@@ -52,12 +52,24 @@ const P4: u32 = 0x3ffffff;
 #[inline]
 fn carry_norm(a: &mut Fp) {
     let mut c: u64;
-    c = a.h[0] as u64 >> 26; a.h[1] += c as u32; a.h[0] &= 0x3ffffff;
-    c = a.h[1] as u64 >> 26; a.h[2] += c as u32; a.h[1] &= 0x3ffffff;
-    c = a.h[2] as u64 >> 26; a.h[3] += c as u32; a.h[2] &= 0x3ffffff;
-    c = a.h[3] as u64 >> 26; a.h[4] += c as u32; a.h[3] &= 0x3ffffff;
-    c = a.h[4] as u64 >> 26; a.h[0] += (c * 5) as u32; a.h[4] &= 0x3ffffff;
-    c = a.h[0] as u64 >> 26; a.h[1] += c as u32; a.h[0] &= 0x3ffffff;
+    c = a.h[0] as u64 >> 26;
+    a.h[1] += c as u32;
+    a.h[0] &= 0x3ffffff;
+    c = a.h[1] as u64 >> 26;
+    a.h[2] += c as u32;
+    a.h[1] &= 0x3ffffff;
+    c = a.h[2] as u64 >> 26;
+    a.h[3] += c as u32;
+    a.h[2] &= 0x3ffffff;
+    c = a.h[3] as u64 >> 26;
+    a.h[4] += c as u32;
+    a.h[3] &= 0x3ffffff;
+    c = a.h[4] as u64 >> 26;
+    a.h[0] += (c * 5) as u32;
+    a.h[4] &= 0x3ffffff;
+    c = a.h[0] as u64 >> 26;
+    a.h[1] += c as u32;
+    a.h[0] &= 0x3ffffff;
 }
 
 /// `h - p` computed with a real signed borrow chain. Returns `Some(h-p)` (normalized)
@@ -189,7 +201,9 @@ fn block_to_fp(bytes: &[u8; 16], hibit: u32) -> Fp {
     let h3 = ((t2 >> 14) | (t3 << 18)) & 0x3ffffff;
     let mut h4 = (t3 >> 8) & 0x3ffffff;
     h4 |= hibit << 24;
-    Fp { h: [h0, h1, h2, h3, h4] }
+    Fp {
+        h: [h0, h1, h2, h3, h4],
+    }
 }
 
 /// Poly1305 (RFC 8439 §2.5.1) over a message with a 32-byte one-time key.
@@ -253,7 +267,9 @@ pub fn poly1305_mac(msg: &[u8], key: &[u8; 32]) -> [u8; 16] {
 /// Derive the Poly1305 one-time key from the ChaCha20 cipher state (RFC 8439 §2.6).
 #[inline]
 fn poly1305_key_gen(key: &[u8; 32], nonce: &[u8; 12]) -> [u8; 32] {
-    crate::rng::chacha20_block(key, 0, nonce)[..32].try_into().unwrap()
+    crate::rng::chacha20_block(key, 0, nonce)[..32]
+        .try_into()
+        .unwrap()
 }
 
 // ── AEAD_XChaCha20_Poly1305 ──────────────────────────────────────────────────────
@@ -354,7 +370,10 @@ fn constant_time_eq(a: &[u8; 16], b: &[u8; 16]) -> bool {
 mod tests {
     use super::*;
     fn hex(s: &str) -> Vec<u8> {
-        (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
     }
 
     #[test]
@@ -363,7 +382,11 @@ mod tests {
         let key: [u8; 32] = key.try_into().unwrap();
         let msg = b"Cryptographic Forum Research Group";
         let tag = poly1305_mac(msg, &key);
-        assert_eq!(tag.to_vec(), hex("a8061dc1305136c6c22b8baf0c0127a9"), "poly1305 §2.5.2");
+        assert_eq!(
+            tag.to_vec(),
+            hex("a8061dc1305136c6c22b8baf0c0127a9"),
+            "poly1305 §2.5.2"
+        );
     }
 
     #[test]
@@ -379,7 +402,11 @@ mod tests {
         let text2 = &text2_full.as_bytes()[..162];
         assert_eq!(text2.len(), 162, "RFC A.3 #2 must be exactly 162 bytes");
         let tag2 = poly1305_mac(text2, &key2);
-        assert_eq!(tag2.to_vec(), hex("36e5f6b5c5e06070f0efca96227a863e"), "poly1305 A.3 #2");
+        assert_eq!(
+            tag2.to_vec(),
+            hex("36e5f6b5c5e06070f0efca96227a863e"),
+            "poly1305 A.3 #2"
+        );
     }
 
     #[test]

@@ -50,7 +50,12 @@ impl Lane {
 
     /// Dispatch: refuse if already at max_lanes worth of running lanes.
     pub fn dispatch(lanes: &mut [Lane], item: String, max_lanes: usize) -> bool {
-        if lanes.iter().filter(|l| l.status == LaneStatus::Running).count() >= max_lanes {
+        if lanes
+            .iter()
+            .filter(|l| l.status == LaneStatus::Running)
+            .count()
+            >= max_lanes
+        {
             return false; // RED: refuse > max_lanes concurrently
         }
         // Freest = fewest queued + idle preferred.

@@ -339,7 +339,9 @@ mod tests {
         // reference at origin. generate: gentle decay toward 0 (x *= 0.9). reflect: pull 99.999%
         // of the rest toward reference (a strong, high-quality reflector). Both forces point at the
         // origin, so the loop is a damped, stable system that provably converges below ε.
-        let reference = Reference { value: vec![0.0, 0.0, 0.0] };
+        let reference = Reference {
+            value: vec![0.0, 0.0, 0.0],
+        };
         let initial = vec![10.0, 20.0, 30.0];
         let actors = Actors {
             generate: |s: &Vec<f64>| s.iter().map(|x| x * 0.9).collect(),
@@ -369,8 +371,15 @@ mod tests {
         };
         let res = run_resonator(&reference, initial, &actors, &L2Metric, &cfg);
         assert_eq!(res.termination, Termination::Converged, "must resonate");
-        assert!(res.final_error < 1e-6, "final error tiny, got {}", res.final_error);
-        assert!(res.checkpoints.len() < cfg.max_iterations, "stopped early, not fused");
+        assert!(
+            res.final_error < 1e-6,
+            "final error tiny, got {}",
+            res.final_error
+        );
+        assert!(
+            res.checkpoints.len() < cfg.max_iterations,
+            "stopped early, not fused"
+        );
         // rollback returns the same best
         let best = rollback_to_best(&res);
         assert!((best.error - res.final_error).abs() < 1e-12);
@@ -381,7 +390,9 @@ mod tests {
     // on the first divergent step, so the state holds (drift ~ 0) — and it must still NOT converge.
     #[test]
     fn runaway_loop_frozen_by_lyapunov_guard() {
-        let reference = Reference { value: vec![0.0, 0.0] };
+        let reference = Reference {
+            value: vec![0.0, 0.0],
+        };
         let initial = vec![1.0, 1.0];
         let actors = Actors {
             // generator DIVERGES: grows distance from origin
@@ -398,17 +409,27 @@ mod tests {
             lyapunov_guard: true,
         };
         let res = run_resonator(&reference, initial, &actors, &L2Metric, &cfg);
-        assert_ne!(res.termination, Termination::Converged, "runaway must NOT converge");
+        assert_ne!(
+            res.termination,
+            Termination::Converged,
+            "runaway must NOT converge"
+        );
         assert!(res.final_error.is_finite(), "no NaN/inf blowup");
         // guard froze the first step → state held → drift ~ 0 (the watchdog worked)
-        assert!(res.total_drift < 1e-9, "guard froze motion, drift ~0, got {}", res.total_drift);
+        assert!(
+            res.total_drift < 1e-9,
+            "guard froze motion, drift ~0, got {}",
+            res.total_drift
+        );
     }
 
     // RED+GREEN: with the guard OFF, the same runaway loop actually moves and the FUSE (max
     // iterations) blows — proving the guard is load-bearing, not a no-op. drift is now large.
     #[test]
     fn runaway_loop_blows_fuse_when_guard_off() {
-        let reference = Reference { value: vec![0.0, 0.0] };
+        let reference = Reference {
+            value: vec![0.0, 0.0],
+        };
         let initial = vec![1.0, 1.0];
         let actors = Actors {
             generate: |s: &Vec<f64>| s.iter().map(|x| x * 1.5).collect(),
@@ -422,9 +443,22 @@ mod tests {
             lyapunov_guard: false,
         };
         let res = run_resonator(&reference, initial, &actors, &L2Metric, &cfg);
-        assert_ne!(res.termination, Termination::Converged, "runaway must NOT converge");
-        assert_eq!(res.termination, Termination::Fused, "must hit the fuse, got {:?}", res.termination);
-        assert!(res.total_drift > 0.0, "divergence produced drift, got {}", res.total_drift);
+        assert_ne!(
+            res.termination,
+            Termination::Converged,
+            "runaway must NOT converge"
+        );
+        assert_eq!(
+            res.termination,
+            Termination::Fused,
+            "must hit the fuse, got {:?}",
+            res.termination
+        );
+        assert!(
+            res.total_drift > 0.0,
+            "divergence produced drift, got {}",
+            res.total_drift
+        );
     }
 
     // RED: disabling the lyapunov guard on a diverging loop must NOT magically converge — proves
@@ -454,7 +488,9 @@ mod tests {
     // reflector from drifting — error stays bounded below ε after enough ticks.
     #[test]
     fn reference_reinjection_prevents_drift() {
-        let reference = Reference { value: vec![2.0, -1.0] };
+        let reference = Reference {
+            value: vec![2.0, -1.0],
+        };
         let initial = vec![2.0, -1.0]; // already at reference
         let actors = Actors {
             // weak generator: tiny perturbation away
@@ -471,7 +507,11 @@ mod tests {
         };
         let res = run_resonator(&reference, initial, &actors, &L2Metric, &cfg);
         assert_eq!(res.termination, Termination::Converged);
-        assert!(res.total_drift < 0.1, "re-injection keeps drift tiny, got {}", res.total_drift);
+        assert!(
+            res.total_drift < 0.1,
+            "re-injection keeps drift tiny, got {}",
+            res.total_drift
+        );
     }
 
     // GREEN: rollback returns the lowest-error checkpoint even when the loop stalls mid-way.
@@ -494,7 +534,11 @@ mod tests {
         let res = run_resonator(&reference, initial, &actors, &L2Metric, &cfg);
         let best = rollback_to_best(&res);
         // best error must be ≤ the first tick's error (0.5) since we started there
-        assert!(best.error <= 0.5 + 1e-9, "rollback beats start, got {}", best.error);
+        assert!(
+            best.error <= 0.5 + 1e-9,
+            "rollback beats start, got {}",
+            best.error
+        );
         assert_eq!(best.error, res.final_error);
     }
 }
