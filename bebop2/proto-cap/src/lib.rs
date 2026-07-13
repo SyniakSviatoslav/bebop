@@ -29,7 +29,9 @@
 
 pub mod capability;
 pub mod error;
+pub mod facade;
 pub mod hybrid_gate;
+pub mod revocation;
 pub mod roster;
 pub mod scope;
 pub mod signed_frame;
@@ -39,7 +41,9 @@ pub mod tlv;
 /// key, bounded by a nonce/expiry. NOT a bearer token, NOT a score.
 pub use capability::Capability;
 pub use error::{CapError, CapResult};
+pub use facade::{Event, EventSink, KernelFacade, Projection, Reject};
 pub use hybrid_gate::{HybridGate, HybridPolicy};
-pub use roster::{AnchorRoster, Delegation, Effect, verify_chain};
+pub use revocation::{pq_key_id, revocation_hash, RevocationSet};
+pub use roster::{verify_chain, AnchorRoster, Delegation, Effect};
 pub use scope::{Action, Resource, Scope};
 pub use signed_frame::SignedFrame;

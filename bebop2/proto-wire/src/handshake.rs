@@ -59,6 +59,9 @@ mod tests {
         // Matches the core primitive directly.
         assert_eq!(hash_a, bebop2_core::hash::sha3_256(transcript_a));
         // Different transcripts => different bindings (collision resistance).
-        assert_ne!(hash_a, hash_b, "different transcripts must produce different bindings");
+        assert_ne!(
+            hash_a, hash_b,
+            "different transcripts must produce different bindings"
+        );
     }
 }

@@ -15,6 +15,7 @@ use std::collections::HashSet;
 use std::sync::Mutex;
 
 use crate::error::{CapError, CapResult};
+use crate::revocation::{pq_key_id, revocation_hash, RevocationSet};
 use crate::roster::{verify_chain, AnchorRoster, Delegation};
 use crate::signed_frame::SignedFrame;
 
@@ -47,8 +48,10 @@ pub enum HybridPolicy {
 /// The replay ledger (`seen`) is bounded to [`MAX_SEEN_NONCES`] and pruned so a
 /// long-lived authorized peer cannot OOM the connection (red-team B2/B3 DoS).
 /// A poisoned lock returns [`CapError::LockPoisoned`] instead of panicking.
-/// Nonces are checked AFTER expiry but the set is only mutated once acceptance
-/// is committed — verify-then-record, never record-then-verify.
+/// Nonces are recorded AFTER every verification step (chain, classical, PQ)
+/// succeeds — verify-then-record, never record-then-verify: an unauthenticated
+/// frame MUST NOT consume a nonce, or an attacker could burn a legit frame's
+/// nonce and cause a false replay rejection (H2 fix).
 const MAX_SEEN_NONCES: usize = 1 << 20; // ~1M; ~8 MiB worst case, then pruned.
 
 #[derive(Debug)]
@@ -77,37 +80,50 @@ impl HybridGate {
     /// UCAN-subset delegation chain (taken from `frame.delegation_chain`). A
     /// frame with no anchor-rooted chain is rejected (`UnknownIssuer`) — this is
     /// the live, single highest-value auth control.
+    ///
+    /// `revocations` is the UCAN-style invalidation set ([`crate::revocation`]).
+    /// If the capability's `subject_key`, its `subject_key_pq` id, or the
+    /// capability's revocation hash are in the set, the frame is rejected as
+    /// [`CapError::Revoked`] even when signature/chain/expiry are otherwise
+    /// valid — that is the MESH-11 control that expiry alone could never give.
+    ///
+    /// **Ordering (verify-then-record, H2 fix):** replay/expiry are cheap
+    /// pre-checks, but the nonce is only *inserted* into `seen` AFTER the chain,
+    /// classical, and PQ legs all verify. An unauthenticated frame therefore
+    /// cannot spend a nonce and block a later legit frame with the same nonce.
     pub fn check(
         &self,
         frame: &SignedFrame,
         roster: &AnchorRoster,
         chain: &[Delegation],
+        revocations: &RevocationSet,
         now: u64,
     ) -> CapResult<()> {
-        // Replay + expiry first (cheap, fail-closed).
+        // Replay + expiry first (cheap, fail-closed). NOTE: we READ the nonce
+        // here but do NOT yet insert it into `seen` (see H2 ordering below).
         if !frame.capability.is_fresh(now) {
             return Err(CapError::Expired);
         }
         let nonce = frame.capability.nonce;
-        {
-            let mut seen = self.seen.lock().map_err(|_| CapError::LockPoisoned)?;
-            if !seen.insert(nonce) {
-                return Err(CapError::NonceRejected);
-            }
-            // Bound the set: once over capacity, drop half the entries so a
-            // long-lived connection cannot OOM on distinct nonces. Order is
-            // irrelevant for replay defense — any half is fine.
-            if seen.len() > MAX_SEEN_NONCES {
-                let keep: HashSet<[u8; 8]> =
-                    seen.iter().take(MAX_SEEN_NONCES / 2).copied().collect();
-                *seen = keep;
-            }
-        }
 
         // Authorization root-of-trust: the delegation chain MUST root in an
         // enrolled anchor and satisfy the UCAN-subset lattice. Fail-closed:
         // an empty/absent chain or a non-anchor root is UnknownIssuer.
         verify_chain(roster, chain, &frame.capability, now)?;
+
+        // Revocation (MESH-11) — checked AFTER the chain verifies so we never
+        // burn a nonce on a frame that fails auth. A revoked capability/key is
+        // rejected even with a valid signature + unexpired window.
+        if revocations.is_revoked_key(&frame.capability.subject_key)
+            || revocations.is_revoked_capability(&revocation_hash(&frame.capability))
+        {
+            return Err(CapError::Revoked);
+        }
+        if let Some(pq) = &frame.capability.subject_key_pq {
+            if revocations.is_revoked_key(&pq_key_id(pq)) {
+                return Err(CapError::Revoked);
+            }
+        }
 
         // Classical leg must ALWAYS verify (real Ed25519). Never relaxed.
         frame.verify_classical()?;
@@ -125,7 +141,29 @@ impl HybridGate {
                 Some(_) => frame.verify_pq(),
                 None => Ok(()),
             },
+        }?;
+
+        // ── verify-then-record (H2) ──
+        // Only AFTER every verify step above succeeds do we commit the nonce to
+        // the replay ledger. A frame that fails chain/classical/PQ (or is
+        // revoked) returns before this point and therefore does NOT consume the
+        // nonce. Now insert: dup nonce => replay.
+        {
+            let mut seen = self.seen.lock().map_err(|_| CapError::LockPoisoned)?;
+            if !seen.insert(nonce) {
+                return Err(CapError::NonceRejected);
+            }
+            // Bound the set: once over capacity, drop half the entries so a
+            // long-lived connection cannot OOM on distinct nonces. Order is
+            // irrelevant for replay defense — any half is fine.
+            if seen.len() > MAX_SEEN_NONCES {
+                let keep: HashSet<[u8; 8]> =
+                    seen.iter().take(MAX_SEEN_NONCES / 2).copied().collect();
+                *seen = keep;
+            }
         }
+
+        Ok(())
     }
 }
 
@@ -201,7 +239,7 @@ mod tests {
         // silently accept classical-only, and never before the auth root check.
         let (f, roster, chain) = gated();
         assert!(matches!(
-            gate.check(&f, &roster, &chain, 0),
+            gate.check(&f, &roster, &chain, &RevocationSet::new(), 0),
             Err(CapError::PqVerifyFailed) | Err(CapError::UnknownIssuer)
         ));
     }
@@ -226,7 +264,9 @@ mod tests {
     fn classical_until_pq_audit_accepts_real_classical() {
         let gate = HybridGate::new(HybridPolicy::ClassicalUntilPqAudit);
         let (f, roster, chain) = gated();
-        assert!(gate.check(&f, &roster, &chain, 0).is_ok());
+        assert!(gate
+            .check(&f, &roster, &chain, &RevocationSet::new(), 0)
+            .is_ok());
     }
 
     #[test]
@@ -264,7 +304,8 @@ mod tests {
         let chain = vec![link];
         // No PQ sig yet -> RequireBoth must reject (PqVerifyFailed; cap has a PQ key).
         assert!(
-            gate.check(&f, &roster, &chain, 0).is_err(),
+            gate.check(&f, &roster, &chain, &RevocationSet::new(), 0)
+                .is_err(),
             "RequireBoth needs PQ"
         );
         // Add a real PQ signature (same key as subject_key_pq).
@@ -273,7 +314,7 @@ mod tests {
         // Fresh gate instance: a new nonce set so the prior (rejected) check does
         // not consume the nonce (the gate tracks seen nonces per instance).
         let gate2 = HybridGate::new(HybridPolicy::RequireBoth);
-        let res = gate2.check(&f, &roster, &chain, 0);
+        let res = gate2.check(&f, &roster, &chain, &RevocationSet::new(), 0);
         assert!(
             res.is_ok(),
             "RequireBoth passes with real PQ, got: {:?}",
@@ -288,7 +329,9 @@ mod tests {
         let gate = HybridGate::new(HybridPolicy::ClassicalUntilPqAudit);
         // No chain: fails auth root-of-trust regardless.
         let roster = AnchorRoster::new();
-        assert!(gate.check(&f, &roster, &[], 0).is_err());
+        assert!(gate
+            .check(&f, &roster, &[], &RevocationSet::new(), 0)
+            .is_err());
     }
 
     #[test]
@@ -303,7 +346,7 @@ mod tests {
         let roster = AnchorRoster::new();
         assert!(
             matches!(
-                gate.check(&f, &roster, &[], 0),
+                gate.check(&f, &roster, &[], &RevocationSet::new(), 0),
                 Err(CapError::UnknownIssuer)
             ),
             "self-signed frame with no anchor chain MUST be rejected"
@@ -315,18 +358,200 @@ mod tests {
         let gate = HybridGate::new(HybridPolicy::ClassicalUntilPqAudit);
         let (f, roster, chain) = gated();
         // First sight of the nonce is accepted...
-        assert!(gate.check(&f, &roster, &chain, 0).is_ok());
+        assert!(gate
+            .check(&f, &roster, &chain, &RevocationSet::new(), 0)
+            .is_ok());
         // ...a second frame with the SAME nonce is a replay.
         assert!(matches!(
-            gate.check(&f, &roster, &chain, 0),
+            gate.check(&f, &roster, &chain, &RevocationSet::new(), 0),
             Err(CapError::NonceRejected)
         ));
         // Expired capability (now >= expiry) is rejected.
         let mut expired = f;
         expired.capability.expiry = 10;
         assert!(matches!(
-            gate.check(&expired, &roster, &chain, 11),
+            gate.check(&expired, &roster, &chain, &RevocationSet::new(), 11),
             Err(CapError::Expired)
         ));
+    }
+
+    // ── MESH-11: revocation (UCAN-style irreversible invalidate) ──
+
+    /// Helper: a fully-anchored, properly-signed (classical + real PQ) frame
+    /// whose `subject_key` is `leaf_pk` and whose PQ key is the consistent
+    /// `0xAB` ML-DSA-65 key. Returns the frame, roster, chain, and the leaf's
+    /// Ed25519 seed so a caller can mint variants.
+    fn revocable_frame(
+        anchor_seed: &[u8; 32],
+        anchor_pk: &[u8; 32],
+        leaf_seed: &[u8; 32],
+        leaf_pk: &[u8; 32],
+        nonce: [u8; 8],
+    ) -> (SignedFrame, AnchorRoster, Vec<Delegation>, [u8; 32]) {
+        let pq_seed = [0xABu8; 32];
+        let (pq_pk, pq_sk) = bebop2_core::pq_dsa::keygen(&pq_seed);
+        let cap = Capability::new_hybrid(
+            *leaf_pk,
+            pq_pk.bytes.clone(),
+            Resource::Route,
+            Action::Send,
+            nonce,
+            9999,
+        );
+        let mut f = SignedFrame::new(cap, b"data".to_vec());
+        f.sign_classical(leaf_seed).unwrap();
+        // Real PQ signature with the consistent PQ key.
+        f.sign_pq(&pq_sk.bytes.clone().try_into().unwrap(), &[0u8; 32])
+            .unwrap();
+        let link = Delegation::sign(
+            *anchor_pk,
+            *leaf_pk,
+            Scope::new(Resource::Route, Action::Send),
+            Effect::new(Resource::Route, Action::Send),
+            9999,
+            nonce,
+            anchor_seed,
+        )
+        .unwrap();
+        let mut roster = AnchorRoster::new();
+        roster.enroll(anchor_pk);
+        (f, roster, vec![link], pq_seed)
+    }
+
+    #[test]
+    fn revoked_capability_stops_verifying() {
+        let gate = HybridGate::new(HybridPolicy::RequireBoth);
+        let (a_seed, a_pk) = key(20);
+        let (l_seed, l_pk) = key(21);
+        // Capability to be revoked.
+        let (f, roster, chain, _) = revocable_frame(&a_seed, &a_pk, &l_seed, &l_pk, [21u8; 8]);
+        // Sanity: WITHOUT a revocation set the frame verifies fine.
+        assert!(
+            gate.check(&f, &roster, &chain, &RevocationSet::new(), 0)
+                .is_ok(),
+            "unrevoked frame must verify"
+        );
+
+        // Revoke THIS capability's hash (surgical — by its exact nonce).
+        let mut revs = RevocationSet::new();
+        revs.revoke_capability(revocation_hash(&f.capability));
+        assert!(
+            matches!(
+                gate.check(&f, &roster, &chain, &revs, 0),
+                Err(CapError::Revoked)
+            ),
+            "revoked capability hash must be rejected"
+        );
+
+        // SURGICAL proof: a NON-revoked capability with the SAME subject/key but
+        // a DIFFERENT nonce (different revocation hash) still verifies.
+        let (f2, _, chain2, _) = revocable_frame(&a_seed, &a_pk, &l_seed, &l_pk, [22u8; 8]);
+        assert!(
+            gate.check(&f2, &roster, &chain2, &revs, 0).is_ok(),
+            "sibling capability (different nonce) must NOT be revoked"
+        );
+    }
+
+    #[test]
+    fn revoked_key_stops_verifying() {
+        let gate = HybridGate::new(HybridPolicy::RequireBoth);
+        let (a_seed, a_pk) = key(22);
+        let (l_seed, l_pk) = key(23);
+        // Revoke by the classical SUBJECT KEY: every capability minted to it dies.
+        let mut revs = RevocationSet::new();
+        revs.revoke_key(l_pk);
+        let (f, roster, chain, _) = revocable_frame(&a_seed, &a_pk, &l_seed, &l_pk, [23u8; 8]);
+        assert!(
+            matches!(
+                gate.check(&f, &roster, &chain, &revs, 0),
+                Err(CapError::Revoked)
+            ),
+            "revoked subject_key must be rejected"
+        );
+
+        // And by the PQ key id too (proves both legs of the hybrid identity revoke).
+        let mut revs_pq = RevocationSet::new();
+        let pq_key = f.capability.subject_key_pq.clone().unwrap();
+        revs_pq.revoke_key(pq_key_id(&pq_key));
+        assert!(
+            matches!(
+                gate.check(&f, &roster, &chain, &revs_pq, 0),
+                Err(CapError::Revoked)
+            ),
+            "revoked PQ key id must be rejected"
+        );
+    }
+
+    #[test]
+    fn merge_anti_entropy_unions_both_namespaces() {
+        let gate = HybridGate::new(HybridPolicy::RequireBoth);
+        let (a_seed, a_pk) = key(24);
+        let (l1_seed, l1_pk) = key(25);
+        let (l2_seed, l2_pk) = key(26);
+
+        // Peer A revokes leaf-1's key; peer B revokes a capability of leaf-2.
+        let mut revs_a = RevocationSet::new();
+        revs_a.revoke_key(l1_pk);
+        let mut revs_b = RevocationSet::new();
+        let (f2, roster2, chain2, _) = revocable_frame(&a_seed, &a_pk, &l2_seed, &l2_pk, [26u8; 8]);
+        revs_b.revoke_capability(revocation_hash(&f2.capability));
+
+        // Anti-entropy: A folds in B (and B folds in A — symmetric convergence).
+        revs_a.merge(&revs_b);
+        revs_b.merge(&revs_a);
+
+        assert!(revs_a.is_revoked_key(&l1_pk), "A keeps its own revocation");
+        assert!(
+            revs_a.is_revoked_capability(&revocation_hash(&f2.capability)),
+            "A learns B's revocation via merge"
+        );
+        assert!(
+            revs_b.is_revoked_key(&l1_pk),
+            "B learns A's revocation via merge"
+        );
+        assert!(
+            revs_b.is_revoked_capability(&revocation_hash(&f2.capability)),
+            "B keeps its own revocation"
+        );
+
+        // Both converge: leaf-1's frame rejected on both sets.
+        let (f1, roster1, chain1, _) = revocable_frame(&a_seed, &a_pk, &l1_seed, &l1_pk, [25u8; 8]);
+        assert!(matches!(
+            gate.check(&f1, &roster1, &chain1, &revs_a, 0),
+            Err(CapError::Revoked)
+        ));
+        assert!(matches!(
+            gate.check(&f1, &roster1, &chain1, &revs_b, 0),
+            Err(CapError::Revoked)
+        ));
+    }
+
+    // ── H2 fix: verify-then-record (RED property) ──
+    // An unauthenticated frame (bad classical sig) MUST NOT consume the nonce,
+    // so a later legit frame with the same nonce still verifies instead of
+    // being falsely rejected as a replay.
+    #[test]
+    fn nonce_not_consumed_by_unauthenticated_frame() {
+        let gate = HybridGate::new(HybridPolicy::ClassicalUntilPqAudit);
+        let (a_seed, a_pk) = key(27);
+        let (l_seed, l_pk) = key(28);
+        let nonce = [42u8; 8];
+
+        // Legit, anchored frame with this nonce.
+        let (mut good, roster, chain, _) = revocable_frame(&a_seed, &a_pk, &l_seed, &l_pk, nonce);
+        // Tamper the payload AFTER signing so the classical sig fails — this is
+        // an *unauthenticated* frame that must NOT spend the nonce.
+        let mut bad = good.clone();
+        bad.payload = b"tampered".to_vec();
+        assert!(gate
+            .check(&bad, &roster, &chain, &RevocationSet::new(), 0)
+            .is_err());
+        // The bad frame must NOT have consumed the nonce: the good frame with
+        // the SAME nonce still verifies OK (proves verify-then-record ordering).
+        assert!(
+            gate.check(&good, &roster, &chain, &RevocationSet::new(), 0)
+                .is_ok(),
+            "a failed-auth frame must not burn the nonce (H2 verify-then-record)"
+        );
     }
 }

@@ -26,6 +26,17 @@ serde_json = "1"
 # Hashing for channel binding (F7): SHA3-256 handshake transcript -> binding.
 bebop2-core = { path = "../core", version = "0.1.0", default-features = false, features = ["std", "test_keygen"] }
 
+# ── Mesh carrier (iroh / QUIC) — DEFERRED, OFFLINE-SAFE ─────────────────────
+# The `iroh` crate is intentionally NOT a dependency: the sovereign core MUST
+# build offline (no network deps), and iroh 1.0.0 conflicts with the
+# `ed25519-dalek` pin in `crates/bebop` (`=3.0.0-rc.0` vs `^3`). The real QUIC
+# carrier is deferred to post-G11-GREEN (see iroh_transport.rs `innovate:`
+# marker); `IrohTransport` is a compile-clean stub today and the BPv7 overlay
+# (`bpv7.rs`) carries the store-and-forward semantics. The empty `iroh` feature
+# is a documented hook, NOT resolvable offline until the dalek conflict is fixed.
+[features]
+iroh = []
+
 [dev-dependencies]
 tokio = { version = "1.48", features = ["rt", "rt-multi-thread", "macros", "net", "sync", "time", "io-util"] }
 futures-util = "0.3"

@@ -107,6 +107,9 @@ mod tests {
         buf.extend_from_slice(&(body.len() as u32).to_le_bytes());
         buf.extend_from_slice(&body);
         let got = decode(&mut buf);
-        assert!(matches!(got, Err(WireError::VersionMismatch(99))), "got: {got:?}");
+        assert!(
+            matches!(got, Err(WireError::VersionMismatch(99))),
+            "got: {got:?}"
+        );
     }
 }

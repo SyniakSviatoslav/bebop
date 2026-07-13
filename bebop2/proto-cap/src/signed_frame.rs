@@ -59,6 +59,7 @@ use bebop2_core::pq_dsa;
 use crate::capability::Capability;
 use crate::error::{CapError, CapResult};
 use crate::hybrid_gate::HybridGate;
+use crate::revocation::RevocationSet;
 use crate::roster::{AnchorRoster, Delegation};
 use crate::tlv::{tlv_signing_input, DOMAIN_SIGNED_FRAME, FIELD_CHANNEL_BINDING};
 
@@ -245,8 +246,18 @@ impl SignedFrame {
     /// currently reports `HybridIncomplete` (todo) rather than failing the frame
     /// outright. See [`crate::hybrid_gate`]. The anchor-rooted `delegation_chain`
     /// is passed through so the gate enforces the root-of-trust live.
-    pub fn verify(&self, gate: &HybridGate, roster: &AnchorRoster, now: u64) -> CapResult<()> {
-        gate.check(self, roster, &self.delegation_chain, now)
+    ///
+    /// `revocations` is the UCAN-style invalidation set (MESH-11); a revoked
+    /// capability/key is rejected even with valid signatures. Most callers pass
+    /// an empty set (`RevocationSet::new()`) when they have no revocations yet.
+    pub fn verify(
+        &self,
+        gate: &HybridGate,
+        roster: &AnchorRoster,
+        revocations: &RevocationSet,
+        now: u64,
+    ) -> CapResult<()> {
+        gate.check(self, roster, &self.delegation_chain, revocations, now)
     }
 }
 

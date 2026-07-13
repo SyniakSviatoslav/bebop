@@ -16,7 +16,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{accept_async, connect_async, MaybeTlsStream, WebSocketStream};
 
 use bebop_proto_cap::roster::AnchorRoster;
-use bebop_proto_cap::{HybridGate, HybridPolicy, SignedFrame};
+use bebop_proto_cap::{HybridGate, HybridPolicy, RevocationSet, SignedFrame};
 
 use crate::error::{WireError, WireResult};
 use crate::framing;
@@ -48,6 +48,10 @@ pub struct WssTransport {
     gate: HybridGate,
     /// Enrolled trust-anchor roster consulted by the gate on every `recv`.
     roster: AnchorRoster,
+    /// UCAN-style revocation set (MESH-11) consulted by the gate on every
+    /// `recv`. A capability/key in this set is rejected even with valid
+    /// signatures. Empty by default; callers wire in gossiped revocations.
+    revocations: RevocationSet,
 }
 
 impl WssTransport {
@@ -56,12 +60,14 @@ impl WssTransport {
         ws: WebSocketStream<MaybeTlsStream<TcpStream>>,
         gate: HybridGate,
         roster: AnchorRoster,
+        revocations: RevocationSet,
     ) -> Self {
         WssTransport {
             ws,
             buf: Vec::new(),
             gate,
             roster,
+            revocations,
         }
     }
 
@@ -73,6 +79,17 @@ impl WssTransport {
     /// Set the enrolled trust-anchor roster used to verify delegation chains.
     pub fn with_roster(self, roster: AnchorRoster) -> Self {
         WssTransport { roster, ..self }
+    }
+
+    /// Set the UCAN-style revocation set (MESH-11) used to reject revoked
+    /// capabilities/keys on every `recv`. A real mesh would gossip revocations
+    /// and fold them in here; an empty set accepts everything that is otherwise
+    /// valid (the pre-MESH-11 behaviour).
+    pub fn with_revocations(self, revocations: RevocationSet) -> Self {
+        WssTransport {
+            revocations,
+            ..self
+        }
     }
 
     /// Graceful close: send a WebSocket Close frame so the peer sees a clean
@@ -114,6 +131,9 @@ impl Transport for WssTransport {
             // `ClassicalUntilPqAudit` policy is NOT used on the live carrier.
             HybridGate::new(HybridPolicy::RequireBoth),
             AnchorRoster::new(),
+            // MESH-11: empty revocation set on the live carrier by default; a
+            // real mesh folds gossiped revocations in via `with_revocations`.
+            RevocationSet::new(),
         ))
     }
 
@@ -152,6 +172,9 @@ impl Transport for WssTransport {
             // PQ-IN-FORCE: see `connect()` above. RequireBoth on accept too.
             HybridGate::new(HybridPolicy::RequireBoth),
             AnchorRoster::new(),
+            // MESH-11: empty revocation set on the live carrier by default; a
+            // real mesh folds gossiped revocations in via `with_revocations`.
+            RevocationSet::new(),
         ))
     }
 
@@ -184,8 +207,13 @@ impl Transport for WssTransport {
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_secs())
                     .unwrap_or(0);
-                self.gate
-                    .check(&frame, &self.roster, &frame.delegation_chain, now)?;
+                self.gate.check(
+                    &frame,
+                    &self.roster,
+                    &frame.delegation_chain,
+                    &self.revocations,
+                    now,
+                )?;
                 return Ok(frame);
             }
             // Need more bytes: read a WS message.
@@ -203,19 +231,6 @@ impl Transport for WssTransport {
                 _ => continue,
             }
         }
-    }
-}
-
-/// Inherent impl: helpers not part of the `Transport` trait contract.
-impl WssTransport {
-    /// Real wall-clock tick for capability expiry (unix seconds). Replaces the
-    /// hardcoded `now = 0` that previously let every capability bypass expiry.
-    pub(crate) fn now() -> u64 {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0)
     }
 }
 
@@ -253,7 +268,14 @@ mod tests {
         // classical key. IMPORTANT: pq_pk (public, 1952B) goes into the cap's
         // `subject_key_pq`; pq_sk (secret, 4032B) signs — never swap them.
         let (pq_pk, pq_sk) = bebop2_core::pq_dsa::keygen(leaf_seed);
-        let cap = Capability::new_hybrid(*leaf_pk, pq_pk.bytes.clone(), resource, action, nonce, expiry);
+        let cap = Capability::new_hybrid(
+            *leaf_pk,
+            pq_pk.bytes.clone(),
+            resource,
+            action,
+            nonce,
+            expiry,
+        );
         let mut f = SignedFrame::new(cap, b"wire-payload".to_vec());
         f.sign_classical(leaf_seed).unwrap();
         // Real PQ signature over the frame's binding-signing domain.

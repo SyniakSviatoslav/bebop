@@ -230,9 +230,7 @@ pub fn verify_chain(
 ) -> CapResult<()> {
     // (a) + root existence. The chain must have at least one link rooted at an
     // enrolled anchor. An empty chain has no root -> no anchor can vouch.
-    let root = chain
-        .first()
-        .ok_or(CapError::UnknownIssuer)?;
+    let root = chain.first().ok_or(CapError::UnknownIssuer)?;
     if !roster.contains(&root.issued_by) {
         return Err(CapError::UnknownIssuer);
     }
@@ -272,9 +270,7 @@ pub fn verify_chain(
     }
 
     // (d) tail subject binds to the capability's subject.
-    let tail = chain
-        .last()
-        .expect("chain non-empty checked above");
+    let tail = chain.last().expect("chain non-empty checked above");
     if tail.subject != cap.subject_key {
         return Err(CapError::SubjectMismatch);
     }
@@ -314,8 +310,8 @@ mod tests {
         let (seed, pk) = key(1);
         let cap = Capability::new(pk, Resource::Route, Action::Send, [1u8; 8], 9999);
         let delegation = Delegation::sign(
-            pk,               // issued_by == self (NOT in roster)
-            pk,               // subject == self
+            pk, // issued_by == self (NOT in roster)
+            pk, // subject == self
             Scope::new(Resource::Route, Action::Send),
             Effect::new(Resource::Route, Action::Send),
             9999,
@@ -481,7 +477,10 @@ mod tests {
         .unwrap();
         // Tamper with the granted scope after signing.
         link.scope = Scope::new(Resource::Ledger, Action::Append);
-        assert!(matches!(link.verify_signature(), Err(CapError::BadSignature)));
+        assert!(matches!(
+            link.verify_signature(),
+            Err(CapError::BadSignature)
+        ));
 
         let cap = Capability::new(leaf_pk, Resource::Route, Action::Send, [13u8; 8], 9999);
         let mut roster = AnchorRoster::new();

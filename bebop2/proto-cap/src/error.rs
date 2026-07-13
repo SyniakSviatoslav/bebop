@@ -48,6 +48,12 @@ pub enum CapError {
     /// rejection instead of a panic — a poisoned mutex must never take down the
     /// connection (red-team B2/B3: unbounded/panic-DoS on the nonce set).
     LockPoisoned,
+    /// The capability (or its subject key) has been revoked by an
+    /// UCAN-style irreversible invalidation set ([`crate::revocation`]). A
+    /// revoked capability MUST be rejected even if its signature and chain are
+    /// otherwise valid and unexpired — revocation is the missing authz control
+    /// that expiry alone could never provide (MESH-11).
+    Revoked,
 }
 
 impl fmt::Display for CapError {
@@ -62,12 +68,17 @@ impl fmt::Display for CapError {
             CapError::Expired => "capability expired",
             CapError::Encode => "capability (de)serialization failed",
             CapError::BadLength => "signature or key buffer had the wrong length",
-            CapError::UnknownIssuer => "delegation chain root issuer is not an enrolled trust anchor",
+            CapError::UnknownIssuer => {
+                "delegation chain root issuer is not an enrolled trust anchor"
+            }
             CapError::ChainBroken => "delegation link does not chain to its parent",
             CapError::ScopeViolation => "requested effect is not a subset of the granted scope",
-            CapError::SubjectMismatch => "delegation chain tail does not bind to the capability subject",
+            CapError::SubjectMismatch => {
+                "delegation chain tail does not bind to the capability subject"
+            }
             CapError::BadSignature => "delegation link signature verification failed",
             CapError::LockPoisoned => "replay ledger unavailable (internal fault)",
+            CapError::Revoked => "capability or subject key has been revoked",
         };
         f.write_str(s)
     }
