@@ -134,6 +134,7 @@ impl LoopRuntime {
     ) -> LoopPhase {
         self.ticks += 1;
         self.phase = LoopPhase::Intake;
+        let _span = tracing::info_span!("loop_cycle", ticks = self.ticks, task = %task).entered();
 
         // ── INTAKE GATE (L1 field red-line + fast Bypass for trivial tasks) ──
         let verdict = field_gate_verdict(task);

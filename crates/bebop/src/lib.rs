@@ -84,4 +84,13 @@ pub mod wiring; // 3-layer runtime: field sim ↔ L5 stabilizer ↔ living memor
 pub mod zenoh; // deterministic mesh transport (local broker; Portkey-swappable)
 pub mod zkvm; // deterministic verifiable state-transition boundary (commit/verify)
 
+/// Install a `tracing-subscriber` with `RUST_LOG` env-filter. CLI/native only
+/// (the wasm build has no stdio; it omits this via cfg).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn init_tracing() {
+    use tracing_subscriber::EnvFilter;
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+}
+
 pub use outfit::{Narration, Outfit, Palette, OUTFIT};

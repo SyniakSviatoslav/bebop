@@ -81,6 +81,8 @@ pub fn wire(
     mm: &mut LivingMemory,
     audit: &mut AuditLog,
 ) -> WireOutcome {
+    let _span =
+        tracing::info_span!("wire", task = %task, has_contract = contract.is_some()).entered();
     // ── LAYER 1: FIELD SIM (red-line physics veto, fail-closed) ──────────────
     let field = field_gate_verdict(task);
 

@@ -38,8 +38,8 @@ fn synth_repo(n: usize, density: f64) -> (Vec<ConnEdge>, Vec<Node2D>, Vec<Platon
     for i in 0..n {
         // deterministic spiral position (so k-d has a vector space)
         let t = i as f64 * 0.137;
-        let x = (t * 6.2831).cos() * (1.0 + 0.1 * (i as f64).sqrt());
-        let y = (t * 6.2831).sin() * (1.0 + 0.1 * (i as f64).sqrt());
+        let x = (t * std::f64::consts::TAU).cos() * (1.0 + 0.1 * (i as f64).sqrt());
+        let y = (t * std::f64::consts::TAU).sin() * (1.0 + 0.1 * (i as f64).sqrt());
         nodes.push(Node2D {
             id: format!("node{i}"),
             x,

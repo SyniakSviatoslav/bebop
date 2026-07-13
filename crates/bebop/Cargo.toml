@@ -37,6 +37,10 @@ signature = "3"             # SignatureEncoding trait for PQ sig (de)serializati
 zeroize = "1"              # zeroize secret key material on drop
 sha2 = "0.10"
 hex = "0.4"
+# Structured telemetry over the host-agent hot paths (loop cycle, wire).
+tracing = "0.1"
+# Pretty env-filter subscriber for `init_tracing()` (shipped; native/CLI only).
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dependencies.bebop-core]
 path = "../../rust-core"
@@ -56,4 +60,9 @@ wasm = ["dep:wasm-bindgen"]
 wasm-bindgen = { version = "0.2", optional = true }
 
 [dev-dependencies]
-# none needed; tests are in-module #[cfg(test)]
+# Benchmarking harness for real latency/throughput telemetry on the hot paths.
+criterion = "0.5"
+
+[[bench]]
+name = "criterion"
+harness = false
