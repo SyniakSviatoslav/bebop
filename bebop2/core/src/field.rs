@@ -269,7 +269,8 @@ impl LaplacianSpectrum {
 /// Jacobi eigenvalue algorithm for a real symmetric matrix A (n×n, row-major). Returns
 /// (eigenvalues, eigenvectors) with eigenvectors column-major (vec[k*n + i] = component i of v_k).
 /// Deterministic, no RNG, no alloc churn beyond fixed-size Vecs. Good for small reference graphs.
-fn jacobi_eigen(a: &[f64], n: usize) -> (Vec<f64>, Vec<f64>) {
+/// Reused by `dmd` (BP-07 POD covariance) — kept `pub` to avoid a second Jacobi fork.
+pub fn jacobi_eigen(a: &[f64], n: usize) -> (Vec<f64>, Vec<f64>) {
     let mut a = a.to_vec();
     let mut v = vec![0.0f64; n * n];
     for i in 0..n {

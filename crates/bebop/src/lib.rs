@@ -26,6 +26,7 @@ pub mod doc_claims;
 pub mod drift; // GLOBAL RULE: systems-thinking / architecture drift detector (configurable, CLI flag)
 pub mod enrich; // dossier-derived: trace replay, Pareto, opt-algos, SEAL analog, design-thinking
 pub mod entropy_ledger; // BP-06: integer-bit entropy-budget ledger (cap, NOT Σ=0)
+pub mod renormalizer; // BP-11: claim-preserving, budget-crediting renormalizer (rate-distortion@0)
 pub mod error_patterns; // AUTO-LEARNING: error-pattern scan at session/loop/debug end → persisted summary
 pub mod execution; // prompt-cache ledger, model cascade, batch splitter (verified-speed primitives)
 pub mod extensions; // F: user rules/hooks/loops/gates/prompts (fail-closed TOML)
@@ -46,6 +47,8 @@ pub mod mathx; // §2 numerics: divergence, transfer-func step response, Lagrang
 pub mod mcp; // minimal MCP server over stdio (JSON-RPC)
 pub mod memory;
 pub mod mission; // the sign-off: animated dock + cigar at loop/task end
+pub mod algebra; // cosine / basis-projection primitives (BP-10 orthogonometer)
+pub mod orthogonality; // BP-10: orthogonometer + Goodhart detector
 pub mod multipilot;
 pub mod optical; // deterministic perceptual-hash image search (aHash + Hamming)
 pub mod outfit;

@@ -293,6 +293,8 @@ pub mod algebra; // cosine / cross / sinc — basis projections
 #[cfg(feature = "host")]
 pub mod chebyshev; // Chebyshev spectral propagator
 #[cfg(feature = "host")]
+pub mod dmd; // Online DMD (rank-1 RLS / Sherman–Morrison), BP-07
+#[cfg(feature = "host")]
 pub mod fft; // FFT (frequency-domain eigen-decomposition)
 #[cfg(feature = "host")]
 pub mod field; // graph-PDE spectral kernel (Laplacian eigenmodes) — replaces dense tensors
