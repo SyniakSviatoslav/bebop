@@ -17,6 +17,19 @@
 use crate::memory::{simple_hash, LivingMemory, MemoryNode};
 use std::collections::HashMap;
 
+/// A NON-LOSSY memory snapshot: every live node AND every attic (cold-tier)
+/// node, with ALL fields preserved (concept, payload, layer, entities, topic,
+/// salience) — not just concept→payload. Restoring it via `replay` reconstructs
+/// the EXACT memory state (layer/salience/attic included), which the persistence
+/// filter (BP-09) and salience decay (BP-13) depend on.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FullState {
+    /// live nodes, keyed by id
+    pub live: HashMap<String, MemoryNode>,
+    /// cold-tier (evicted-but-preserved) nodes, keyed by id
+    pub attic: HashMap<String, MemoryNode>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Commit {
     pub hash: String,
@@ -31,8 +44,8 @@ pub struct Commit {
 pub struct AgenticGit {
     head: Option<String>,
     commits: HashMap<String, Commit>,
-    /// concept → payload snapshot, keyed by commit hash
-    states: HashMap<String, HashMap<String, String>>,
+    /// full memory snapshot, keyed by commit hash
+    states: HashMap<String, FullState>,
     seq: u64,
 }
 
@@ -105,8 +118,8 @@ impl AgenticGit {
     }
 
     /// CONTEXT(hash): reconstruct the exact memory state at a commit (GREEN:
-    /// returns the snapshot; RED: unknown hash → None).
-    pub fn context(&self, hash: &str) -> Option<HashMap<String, String>> {
+    /// returns the full snapshot; RED: unknown hash → None).
+    pub fn context(&self, hash: &str) -> Option<FullState> {
         self.states.get(hash).cloned()
     }
 
@@ -151,20 +164,8 @@ impl AgenticGit {
             if recomputed_state != c.state_hash {
                 return false;
             }
-            let parents_key = if c.parents.is_empty() {
-                None
-            } else {
-                Some(c.parents.join("+"))
-            };
             let hash_input = format!("{:?}|{}|{}|{}", c.parents, c.state_hash, c.message, c.seq);
-            let recomputed_hash = format!(
-                "{:08x}",
-                simple_hash(if parents_key.is_some() {
-                    hash_input.as_bytes()
-                } else {
-                    hash_input.as_bytes()
-                })
-            );
+            let recomputed_hash = format!("{:08x}", simple_hash(hash_input.as_bytes()));
             if recomputed_hash != c.hash {
                 return false;
             }
@@ -179,29 +180,64 @@ impl Default for AgenticGit {
     }
 }
 
-/// Deterministically serialize a memory snapshot (sorted by concept → stable hash).
-fn snapshot(mem: &LivingMemory) -> HashMap<String, String> {
-    let mut m = HashMap::new();
-    for (_, n) in mem.nodes() {
-        m.insert(n.concept.clone(), n.payload.clone());
+/// Deterministically serialize a full memory snapshot (sorted by id → stable
+/// hash). Captures EVERY field of every node (live + attic) so the
+/// content-addressed `state_hash` changes iff the exact memory state changes.
+// LESSON: a memory snapshot that drops fields (layer/salience/attic) is a
+// *lossy* audit trail — the persistence filter (BP-09) and salience decay
+// (BP-13) depend on exactly those fields, so replay must restore them 1:1.
+fn snapshot(mem: &LivingMemory) -> FullState {
+    let mut live = HashMap::new();
+    for (id, n) in mem.nodes() {
+        live.insert(id.clone(), n.clone());
     }
-    m
+    let mut attic = HashMap::new();
+    for (id, n) in mem.attic() {
+        attic.insert(id.clone(), n.clone());
+    }
+    FullState { live, attic }
 }
 
-fn serialize(state: &HashMap<String, String>) -> String {
-    let mut v: Vec<(&String, &String)> = state.iter().collect();
-    v.sort_by_key(|(k, _)| *k);
-    v.iter()
-        .map(|(k, p)| format!("{}:{}", k, p))
-        .collect::<Vec<_>>()
-        .join("\n")
+fn serialize(state: &FullState) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    for (id, n) in state.live.iter().chain(state.attic.iter()) {
+        // Stable, field-explicit encoding. Layer is encoded by discriminant.
+        let layer = match n.layer {
+            crate::memory::Layer::Working => "W",
+            crate::memory::Layer::Short => "S",
+            crate::memory::Layer::Long => "L",
+        };
+        lines.push(format!(
+            "{}|{}|{}|{}|{}|{}|{:.6}|{}",
+            id,
+            layer,
+            n.concept,
+            n.payload,
+            n.topic,
+            n.entities.join(","),
+            n.salience,
+            if state.attic.contains_key(id) {
+                "ATTIC"
+            } else {
+                "LIVE"
+            },
+        ));
+    }
+    lines.sort();
+    lines.join("\n")
 }
 
-/// Rebuild a `LivingMemory` from a reconstructed snapshot (replay utility).
-pub fn replay(state: &HashMap<String, String>) -> LivingMemory {
+/// Rebuild a `LivingMemory` from a reconstructed full snapshot (replay utility).
+/// Restores EVERY field (layer/salience/entities/topic) and the attic — unlike
+/// the old `remember()` path which reset everything to defaults. The replay is
+/// therefore lossless: commit → replay yields the EXACT same state.
+pub fn replay(state: &FullState) -> LivingMemory {
     let mut m = LivingMemory::new();
-    for (concept, payload) in state {
-        m.remember(concept, payload);
+    for n in state.live.values() {
+        m.restore_node(n.clone());
+    }
+    for n in state.attic.values() {
+        m.restore_attic(n.clone());
     }
     m
 }
@@ -243,15 +279,18 @@ mod tests {
         let h2 = g.commit(&m, "add session");
 
         let at_h = g.context(&h).expect("seed context present");
-        assert_eq!(at_h.len(), 1);
-        assert!(at_h.contains_key("auth"));
+        assert_eq!(at_h.live.len(), 1);
         assert!(
-            !at_h.contains_key("session"),
+            at_h.live.values().any(|n| n.concept == "auth"),
+            "seed snapshot has auth"
+        );
+        assert!(
+            !at_h.live.values().any(|n| n.concept == "session"),
             "seed snapshot predates session"
         );
 
         let at_h2 = g.context(&h2).expect("session context present");
-        assert_eq!(at_h2.len(), 2);
+        assert_eq!(at_h2.live.len(), 2);
         // RED: unknown hash → None (no fabricated history)
         assert!(g.context("deadbeef").is_none());
     }
@@ -281,7 +320,9 @@ mod tests {
         // RED: mutate a stored state → integrity must FAIL (tamper-evident)
         let head = g.head().unwrap().to_string();
         if let Some(s) = g.states.get_mut(&head) {
-            s.insert("auth".into(), "PWNED".into());
+            if let Some(node) = s.live.values_mut().next() {
+                node.payload = "PWNED".into();
+            }
         }
         assert!(!g.verify_integrity(), "mutated state must break integrity");
     }
@@ -303,7 +344,68 @@ mod tests {
         let mh = ga.merge(&gb, &union, "merge");
         let mc = ga.commits.get(&mh).unwrap();
         assert_eq!(mc.parents.len(), 2, "merge commit has two parents");
-        assert_eq!(ga.context(&mh).unwrap().len(), 3, "merged state = union");
+        assert_eq!(
+            ga.context(&mh).unwrap().live.len(),
+            3,
+            "merged state = union"
+        );
         assert!(ga.verify_integrity());
+    }
+
+    #[test]
+    fn replay_is_lossless_full_state() {
+        // BP-16 RED→GREEN: a node with rich metadata (salience, layer,
+        // entities, topic) AND an attic (evicted) node must survive a
+        // commit → replay roundtrip EXACTLY. The OLD code dropped every field
+        // (reset to Short/layer-less) and ignored the attic.
+        use crate::memory::{Layer, LivingMemory};
+
+        let mut m = LivingMemory::new();
+        let id = m.remember_meta(
+            "auth",
+            "login boundary",
+            vec!["oauth".into(), "session".into()],
+            "security",
+            0.9,
+        );
+        // Promote to Long layer (consolidation path).
+        m.nodes_mut().get_mut(&id).unwrap().layer = Layer::Long;
+        // Evict it into the attic via decay (theta default 0.5; salience 0.9
+        // survives, so instead force an eviction by lowering salience first).
+        m.reinforce("auth", -1.0); // salience -> -0.1 (below theta) → evicted on tick
+        m.tick();
+        assert!(
+            m.attic_contains(&id),
+            "auth node should be in attic after decay"
+        );
+
+        let mut g = AgenticGit::new();
+        let h = g.commit(&m, "snapshot with attic");
+
+        // REPLAY: reconstruct EXACT state.
+        let r = replay(&g.context(&h).expect("snapshot present"));
+        // Attic node preserved (non-lossy cold tier).
+        assert!(
+            r.attic_contains(&id),
+            "attic node must survive commit→replay"
+        );
+        let node = r.get_from_attic(&id).expect("attic node present");
+        // All metadata preserved (was lost before BP-16).
+        assert_eq!(node.payload, "login boundary");
+        assert_eq!(node.entities, vec!["oauth", "session"]);
+        assert_eq!(node.topic, "security");
+        assert!(
+            (node.salience - (-0.1)).abs() < 0.05,
+            "salience preserved (decayed, not reset to 0)"
+        );
+        assert_eq!(node.layer, Layer::Long, "layer preserved");
+
+        // Roundtrip determinism: serialize(commit) == serialize(replay).
+        let orig = serialize(&snapshot(&m));
+        let repl = serialize(&snapshot(&r));
+        assert_eq!(
+            orig, repl,
+            "commit→replay must be byte-identical (lossless)"
+        );
     }
 }

@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct MemoryNode {
     pub id: String,
     pub concept: String,
@@ -151,6 +151,19 @@ impl LivingMemory {
         } else {
             false
         }
+    }
+
+    /// Re-insert a node into the live map AS-IS (all fields preserved). Used by
+    /// agentic-git `replay` to faithfully reconstruct a snapshot — unlike
+    /// `remember`/`remember_meta`, this does NOT reset layer/salience/entities.
+    pub fn restore_node(&mut self, node: MemoryNode) {
+        self.nodes.insert(node.id.clone(), node);
+    }
+
+    /// Re-insert a node into the cold-tier attic AS-IS (for snapshot replay of
+    /// an evicted-but-preserved node). Restores the full non-lossy state.
+    pub fn restore_attic(&mut self, node: MemoryNode) {
+        self.attic.insert(node.id.clone(), node);
     }
 
     /// Advance the forgetting clock. Replaces the old hash-lottery eviction
