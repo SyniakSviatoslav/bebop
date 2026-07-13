@@ -28,9 +28,11 @@
 //! ─────────────────────────────────────────────────────────────────────────────
 
 pub mod capability;
+pub mod entropy;
 pub mod error;
 pub mod facade;
 pub mod hybrid_gate;
+pub mod port;
 pub mod revocation;
 pub mod roster;
 pub mod scope;
@@ -40,9 +42,11 @@ pub mod tlv;
 /// A signed capability authorises exactly one action on one resource for one
 /// key, bounded by a nonce/expiry. NOT a bearer token, NOT a score.
 pub use capability::Capability;
+pub use entropy::{AnuQrng, EntropyRng, EntropySource, OsEntropy, SeedPool};
 pub use error::{CapError, CapResult};
 pub use facade::{Event, EventSink, KernelFacade, Projection, Reject};
 pub use hybrid_gate::{HybridGate, HybridPolicy};
+pub use port::{check_port_scope, ChannelAdapter, InboundPort, NotificationPort, OutboundPort};
 pub use revocation::{pq_key_id, revocation_hash, RevocationSet};
 pub use roster::{verify_chain, AnchorRoster, Delegation, Effect};
 pub use scope::{Action, Resource, Scope};

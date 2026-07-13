@@ -44,6 +44,10 @@ pub enum CapError {
     /// A delegation link's Ed25519 signature failed to verify against its
     /// `issued_by` issuer key.
     BadSignature,
+    /// The mandatory OS entropy floor (getrandom / RDRAND) was unavailable, so
+    /// the fail-closed entropy port refused to produce output. Advisory sources
+    /// (e.g. ANU QRNG) can NEVER substitute for this — see `entropy.rs` (IP-17/18).
+    EntropyUnavailable,
     /// The replay ledger lock was poisoned (internal fault). Surfaced as a clean
     /// rejection instead of a panic — a poisoned mutex must never take down the
     /// connection (red-team B2/B3: unbounded/panic-DoS on the nonce set).
@@ -77,6 +81,9 @@ impl fmt::Display for CapError {
                 "delegation chain tail does not bind to the capability subject"
             }
             CapError::BadSignature => "delegation link signature verification failed",
+            CapError::EntropyUnavailable => {
+                "mandatory OS entropy floor unavailable (fail-closed; advisory QRNG cannot substitute)"
+            }
             CapError::LockPoisoned => "replay ledger unavailable (internal fault)",
             CapError::Revoked => "capability or subject key has been revoked",
         };

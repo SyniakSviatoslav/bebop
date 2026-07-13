@@ -18,6 +18,12 @@ bebop2-core = { path = "../core", version = "0.1.0", default-features = false, f
 # signing defect.
 serde = { version = "1", features = ["derive"] }
 
+# `anu` restores the REAL ANU QRNG HTTP adapter (ADVISORY-ONLY, never trusted
+# alone, never the fail-closed floor). Off by default so the default build is
+# offline-clean and never touches the network. No new dependency is pulled.
+[features]
+anu = []
+
 # `serde_json` is a *dev-only* dependency, used solely by the regression test
 # `tlv::tests::serde_json_is_non_canonical_red` to PROVE the defect the TLV codec
 # fixes (serde_json is implementation-defined, not canonical: float formatting and
