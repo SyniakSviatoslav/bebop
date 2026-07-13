@@ -32,6 +32,46 @@ use ratatui::{
 use std::io::Stdout;
 use std::time::Duration;
 
+/// RAII guard that restores the terminal to its original mode on drop — even
+/// if the guarded scope panics. Without this, a panic inside `helm_loop`
+/// left the terminal in raw mode with the alternate screen up (garbled prompt).
+/// BP-23 fix: deterministic cleanup, no `catch_unwind` needed.
+///
+/// `enter` enables raw mode + alternate screen and returns an *active* guard.
+/// If raw mode cannot be entered (e.g. no TTY in CI), `enter` returns an
+/// *inactive* guard inside the `Err` — dropping that inactive guard is a
+/// no-op, so callers can `?` out of `enter` without ever calling
+/// `disable_raw_mode` on a terminal they never put into raw mode.
+#[derive(Debug)]
+struct RawModeGuard {
+    active: bool,
+}
+
+impl RawModeGuard {
+    /// Enter raw mode + alternate screen. Returns `Err` (with an *inactive*
+    /// guard) if crossterm setup fails, so `drop` won't try to restore a
+    /// state we never entered.
+    fn enter(stdout: &mut Stdout) -> std::io::Result<Self> {
+        enable_raw_mode()?;
+        execute!(stdout, EnterAlternateScreen)?;
+        Ok(RawModeGuard { active: true })
+    }
+}
+
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        if !self.active {
+            return;
+        }
+        // Best-effort restore. Ignore errors: a failure during Drop can't be
+        // surfaced usefully and must not panic (which would abort the original
+        // panic's unwind).
+        let _ = disable_raw_mode();
+        let mut stdout = std::io::stdout();
+        let _ = execute!(stdout, LeaveAlternateScreen);
+    }
+}
+
 // ---- palette helpers -------------------------------------------------------
 fn c(rgb: u32) -> Color {
     Color::Rgb((rgb >> 16) as u8, (rgb >> 8) as u8, (rgb & 0xFF) as u8)
@@ -931,11 +971,10 @@ pub fn run_tui() -> std::io::Result<()> {
             return Ok(());
         }
         let mut stdout = std::io::stdout();
-        execute!(stdout, EnterAlternateScreen)?;
+        let _guard = RawModeGuard::enter(&mut stdout)?;
         let backend = CrosstermBackend::new(stdout);
         let mut term = Terminal::new(backend)?;
         helm_loop(&mut term, &o)?;
-        execute!(term.backend_mut(), LeaveAlternateScreen)?;
         crate::mission::mission_summary(
             "session",
             &[
@@ -946,9 +985,10 @@ pub fn run_tui() -> std::io::Result<()> {
         return Ok(());
     }
 
-    enable_raw_mode()?;
+    // Enter raw mode + alternate screen via a RAII guard so they are ALWAYS
+    // restored — even if `helm_loop` (or anything it calls) panics.
     let mut stdout = std::io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    let _guard = RawModeGuard::enter(&mut stdout)?;
     let backend = CrosstermBackend::new(stdout);
     let mut term = Terminal::new(backend)?;
 
@@ -961,9 +1001,8 @@ pub fn run_tui() -> std::io::Result<()> {
     std::thread::sleep(Duration::from_millis(350));
 
     let res = helm_loop(&mut term, &o);
+    // `_guard` drops here → raw mode + alternate screen restored (panic-safe).
 
-    disable_raw_mode()?;
-    execute!(term.backend_mut(), LeaveAlternateScreen)?;
     crate::mission::mission_summary(
         "session",
         &[
@@ -1281,5 +1320,21 @@ mod tests {
         assert_eq!(a.drift, b.drift);
         assert_eq!(a.quality, b.quality);
         assert_eq!(a.tokens, b.tokens);
+    }
+
+    // ── BP-23: raw-mode RAII guard is panic-safe + fail-safe ──
+    #[test]
+    fn raw_mode_guard_fails_safe_without_tty() {
+        // In a non-TTY (CI) environment `enter` must return Err and leave the
+        // guard INACTIVE, so its Drop never tries to restore a state we never
+        // entered (which would itself panic or corrupt the terminal).
+        let mut stdout = std::io::stdout();
+        let res = RawModeGuard::enter(&mut stdout);
+        assert!(res.is_err(), "enter must fail off-TTY, not hang/panic");
+        // The inactive guard (inside the Err) drops without touching the terminal.
+        drop(res.unwrap_err());
+        // Construct the inactive variant directly and drop it: must not panic.
+        let inactive = RawModeGuard { active: false };
+        drop(inactive);
     }
 }

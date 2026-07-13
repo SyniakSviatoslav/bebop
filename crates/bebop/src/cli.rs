@@ -16,8 +16,22 @@ use std::env;
 
 pub fn run() {
     let args: Vec<String> = env::args().collect();
-    let cmd = args.get(1).map(|s| s.as_str()).unwrap_or("");
-    let rest = &args[2.min(args.len())..];
+    let mut strict = false;
+    // BP-23: `--strict` rejects UNKNOWN subcommands / flags instead of
+    // silently ignoring them. When set, an unrecognized command is a hard
+    // error (exit 2) rather than a quiet no-op (catch-typos defense).
+    let cmd_start = if args.get(1).map(|s| s.as_str()) == Some("--strict") {
+        strict = true;
+        2
+    } else {
+        1
+    };
+    let cmd = args.get(cmd_start).map(|s| s.as_str()).unwrap_or("");
+    let rest = &args[cmd_start + 1.min(args.len())..];
+    if strict && !is_known_command(cmd) {
+        eprintln!("  ✖ unknown command (strict mode): {cmd}  (try `bebop help`)");
+        std::process::exit(2);
+    }
 
     match cmd {
         "" => {
@@ -667,4 +681,57 @@ fn flag_value(args: &[String], flag: &str) -> Option<String> {
     args.iter()
         .position(|a| a == flag)
         .and_then(|i| args.get(i + 1).cloned())
+}
+
+/// The closed set of subcommands `bebop` understands. Used by `--strict`
+/// to reject typos / unknown commands instead of silently no-op-ing.
+fn is_known_command(cmd: &str) -> bool {
+    matches!(
+        cmd,
+        "" | "help"
+            | "--help"
+            | "-h"
+            | "settings"
+            | "drift"
+            | "errors"
+            | "init"
+            | "preview"
+            | "boot"
+            | "node"
+            | "recall"
+            | "research"
+            | "outfit"
+            | "status"
+            | "ledger"
+            | "dispatch"
+            | "route"
+            | "map"
+            | "diagrams"
+            | "mcp"
+            | "radio"
+            | "mission"
+            | "scan"
+            | "plan"
+            | "audit"
+            | "boundary"
+            | "field"
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strict_rejects_unknown_command() {
+        // The `--strict` gate must treat an unrecognized command as a hard
+        // error. We can't easily assert the process exit here, so we assert the
+        // predicate `run()` consults: an unknown command is NOT known.
+        assert!(!is_known_command("definitely-not-a-command"));
+        assert!(!is_known_command("bebop")); // no subcommand-like typo
+                                             // And the genuine surface stays known.
+        assert!(is_known_command("field"));
+        assert!(is_known_command("scan"));
+        assert!(is_known_command(""));
+    }
 }
