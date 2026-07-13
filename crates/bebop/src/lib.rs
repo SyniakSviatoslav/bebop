@@ -36,6 +36,7 @@ pub mod gender; // R: configurable grammatical-gender + gender-communication sty
 pub mod geometry_field; // geometric + wave sim of the connection graph (geometry, waves, cycles, divergence)
 pub mod governor;
 pub mod guard; // GUARD: Input/Output guards + consensus kill-switch (audit 29158)
+pub mod instrument_panel; // BP-19: aggregate 8 instruments + 4 alarm bands
 pub mod intent; // P: auto-detect GOAL vs LOOP intent from a prompt
 pub mod knowledge;
 pub mod lanes; // O: parallel-session scheduler (throughput/auto-queue/ETA)
