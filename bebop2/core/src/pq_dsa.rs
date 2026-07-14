@@ -991,6 +991,34 @@ pub fn keygen(seed: &[u8; SEEDBYTES]) -> (MlDsa65Pk, MlDsa65Sk) {
     (MlDsa65Pk { bytes: pk }, MlDsa65Sk { bytes: sk })
 }
 
+/// C6 — hybrid domain-separation label for the ML-DSA-65 leg of a hybrid identity.
+/// Versioned so a future rotation (e.g. a parameter change) gets a distinct tag.
+pub const HYBRID_PQ_SEED_LABEL: &[u8] = b"bebop2/hybrid/ml-dsa-65/v1";
+
+/// C6 — derive the ML-DSA-65 seed from a hybrid **master** seed under a distinct
+/// domain-separation label, so the PQ and the classical (Ed25519) private keys of a
+/// hybrid identity are NOT derived identically from one raw seed.
+///
+/// WHY: feeding one 32-byte master straight into two independent cryptosystems
+/// (`sign::keygen(master)` for Ed25519 AND `pq_dsa::keygen(master)` for ML-DSA)
+/// couples the two legs — the whole point of a hybrid is that a break in one scheme
+/// leaves the other standing, which a shared derivation input undermines. The classical
+/// leg keeps the raw master (Ed25519 already runs it through SHA-512 internally); the PQ
+/// leg uses `SHAKE256(master ‖ HYBRID_PQ_SEED_LABEL, 32)`. SHAKE256 is a sponge (no
+/// length-extension) and `master` is fixed-width, so `master ‖ label` is unambiguous.
+///
+/// MULTI-SITE: every place that derives the hybrid PQ identity from the master — the
+/// signer AND whoever mints the capability's `subject_key_pq` — MUST route through this
+/// one function, or the derived public keys diverge and `verify_pq` fails.
+pub fn derive_pq_seed(master: &[u8; SEEDBYTES]) -> [u8; SEEDBYTES] {
+    let mut input = Vec::with_capacity(SEEDBYTES + HYBRID_PQ_SEED_LABEL.len());
+    input.extend_from_slice(master);
+    input.extend_from_slice(HYBRID_PQ_SEED_LABEL);
+    let mut out = [0u8; SEEDBYTES];
+    shake256(&input, &mut out);
+    out
+}
+
 /// Production ML-DSA-65 keygen: draw a fresh 32-byte seed from the platform entropy
 /// provider and derive the keypair. Fail-closed — returns `Err` if entropy is
 /// unavailable, never a constant fallback. Replaces the constant-seed [`keygen`]
@@ -1027,6 +1055,54 @@ mod acvp_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── C6: hybrid PQ seed domain-separation ────────────────────────────────────────
+    // The ML-DSA leg of a hybrid identity must NOT be derived from the raw master seed
+    // (which also derives the Ed25519 leg). `derive_pq_seed` must (1) differ from the
+    // master, (2) be deterministic, (3) be label-bound (a different label → a different
+    // seed), and (4) yield a PQ public key distinct from the pre-fix same-seed key.
+    // RED (pre-fix `keygen(seed)`): the PQ key equalled `keygen(master).pk` and the PQ
+    // seed WAS the master → assertions (1) and (4) fail. GREEN: all hold.
+    #[test]
+    fn hybrid_pq_seed_is_domain_separated() {
+        let master = [0x42u8; 32];
+
+        // (1) domain separation: the PQ seed is not the raw master (== the Ed25519 seed).
+        let pq_seed = derive_pq_seed(&master);
+        assert_ne!(
+            pq_seed, master,
+            "PQ seed equals the master/classical seed → no domain separation"
+        );
+
+        // (2) determinism.
+        assert_eq!(pq_seed, derive_pq_seed(&master), "derive_pq_seed not deterministic");
+
+        // (3) label-bound: SHAKE256(master ‖ other-label) must differ from the real one.
+        let mut other = Vec::new();
+        other.extend_from_slice(&master);
+        other.extend_from_slice(b"bebop2/hybrid/ml-dsa-65/v2");
+        let mut other_seed = [0u8; 32];
+        shake256(&other, &mut other_seed);
+        assert_ne!(
+            pq_seed, other_seed,
+            "PQ seed not bound to its label (a different label gave the same seed)"
+        );
+
+        // (4) the domain-separated PQ identity differs from the pre-fix coupled one.
+        let (pk_sep, _) = keygen(&pq_seed);
+        let (pk_coupled, _) = keygen(&master); // what the buggy path used
+        assert_ne!(
+            pk_sep.bytes, pk_coupled.bytes,
+            "domain-separated PQ pubkey equals the same-seed pubkey → fix is a no-op"
+        );
+
+        // Sanity: the domain-separated PQ key still round-trips (sign/verify).
+        let msg = b"hybrid domain-sep probe";
+        let (pk, sk) = keygen(&pq_seed);
+        let rnd = [0u8; RNDBYTES];
+        let sig = sign(&sk, msg, &rnd);
+        assert!(verify(&pk, msg, &sig), "domain-separated PQ key must sign/verify");
+    }
 
     #[test]
     fn kat_shake256_empty() {

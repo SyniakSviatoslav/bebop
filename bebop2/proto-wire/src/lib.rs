@@ -115,9 +115,12 @@ pub fn sign_frame_bound(
     // Real classical signature committing to the channel binding.
     frame.sign_classical(seed)?;
     // PQ-IN-FORCE: the hybrid gate (RequireBoth) also requires a valid ML-DSA-65
-    // signature over the bound frame. Derive a deterministic PQ keypair from the
-    // same seed and sign the PQ leg for real (no fabricated pass).
-    let (_pq_pk, pq_sk) = bebop2_core::pq_dsa::keygen(seed);
+    // signature over the bound frame. C6: derive the ML-DSA seed from the master under
+    // a distinct domain-separation label (NOT the raw `seed`, which also derives the
+    // Ed25519 key above) so the two legs of the hybrid identity are independent. The
+    // capability's `subject_key_pq` MUST be minted from this same `derive_pq_seed`.
+    let pq_seed = bebop2_core::pq_dsa::derive_pq_seed(seed);
+    let (_pq_pk, pq_sk) = bebop2_core::pq_dsa::keygen(&pq_seed);
     frame
         .sign_pq(&pq_sk.bytes.clone().try_into().unwrap(), &[0u8; 32])
         .map_err(|e| crate::error::WireError::Carrier(format!("pq sign: {e:?}")))?;

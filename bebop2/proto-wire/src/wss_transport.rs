@@ -774,11 +774,12 @@ mod tests {
 
         // Simulate a completed handshake; the transcript hash binds the channel.
         // The frame subject MUST be the chain's leaf (leaf_pk) so the tail binds.
-        // Hybrid capability (RequireBoth in force on the wire): derive the PQ
-        // public key from the SAME leaf seed so sign_frame_bound's PQ signature
-        // verifies against this cap's subject_key_pq.
+        // Hybrid capability (RequireBoth in force on the wire): derive the PQ public
+        // key from the SAME domain-separated PQ seed sign_frame_bound uses (C6 — NOT the
+        // raw leaf seed) so its PQ signature verifies against this cap's subject_key_pq.
         let transcript = b"channel-A-handshake-transcript";
-        let (bound_pq_pk, _bound_pq_sk) = bebop2_core::pq_dsa::keygen(&l_seed);
+        let pq_seed = bebop2_core::pq_dsa::derive_pq_seed(&l_seed);
+        let (bound_pq_pk, _bound_pq_sk) = bebop2_core::pq_dsa::keygen(&pq_seed);
         let cap = Capability::new_hybrid(
             l_pk,
             bound_pq_pk.bytes.clone(),
