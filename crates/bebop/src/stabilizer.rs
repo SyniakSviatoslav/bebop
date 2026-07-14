@@ -41,7 +41,12 @@
 /// Positive => the system is climbing out of its stable basin (destabilizing).
 pub fn lyapunov_derivative(v_prev: f64, v_cur: f64, dt: f64) -> f64 {
     if dt <= 0.0 {
-        return 0.0; // undefined step → treat as neutral, never claim instability
+        // Malformed step (zero/negative dt). BP-23 #1 (fail-closed): a deformed
+        // dt must NOT be treated as "neutral" — that is the old fail-OPEN bug
+        // (V̇=0 ≤ threshold ⇒ adaptation_allowed → optimizer moves the core).
+        // Instead report an INFIINITE energy rate so the supervisor freezes
+        // adaptation (adaptation_allowed(∞, 0) = false). Refuse, never proceed.
+        return f64::INFINITY;
     }
     (v_cur - v_prev) / dt
 }
@@ -483,10 +488,19 @@ mod tests {
     }
 
     #[test]
-    fn bad_dt_is_neutral() {
-        // RED: dt ≤ 0 must not fabricate instability (no division by zero, no false alarm).
-        assert_eq!(lyapunov_derivative(1.0, 9.0, 0.0), 0.0);
-        assert_eq!(lyapunov_derivative(1.0, 9.0, -1.0), 0.0);
+    fn bad_dt_freezes_adaptation() {
+        // BP-23 #1 (fail-closed): a malformed dt (≤0) must FREEZE adaptation,
+        // not permit it. RED before fix: lyapunov_derivative returned 0.0 ⇒
+        // adaptation_allowed(0.0, 0.0)=true ⇒ optimizer could move the core on a
+        // garbage step. GREEN after: returns ∞ ⇒ adaptation_allowed=false.
+        assert!(!adaptation_allowed(lyapunov_derivative(1.0, 9.0, 0.0), 0.0));
+        assert!(!adaptation_allowed(lyapunov_derivative(1.0, 9.0, -1.0), 0.0));
+        // The full step refuses any motion on a malformed dt.
+        assert_eq!(
+            stabilize_step(1.0, 9.0, -1.0, 5.0, 1.0, 0.0),
+            0.0,
+            "malformed dt must freeze the deterministic core (fail-closed)"
+        );
     }
 
     #[test]

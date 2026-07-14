@@ -276,6 +276,130 @@ pub fn invert(a: &[f64], n: usize) -> Vec<f64> {
     inv
 }
 
+/// General rectangular MATMUL: C(r×c) = A(r×k) · B(k×c), row-major. Extends the
+/// n×n `matmul` helper for the measurement-update (which mixes n×n and n×m blocks).
+pub fn matmul_rect(a: &[f64], b: &[f64], r: usize, k: usize, c: usize, out: &mut [f64]) {
+    for i in 0..r {
+        for j in 0..c {
+            let mut s = 0.0f64;
+            for l in 0..k {
+                s += a[i * k + l] * b[l * c + j];
+            }
+            out[i * c + j] = s;
+        }
+    }
+}
+
+/// Identity n×n (row-major) into `out`.
+fn eye(n: usize, out: &mut [f64]) {
+    for i in 0..n {
+        for j in 0..n {
+            out[i * n + j] = if i == j { 1.0 } else { 0.0 };
+        }
+    }
+}
+
+/// `BP-21 — Kalman measurement-update` (the missing 60% of the filter).
+///
+/// The `SpectralKalman` above handles ONLY the covariance *predict* step
+/// (`P = A P Aᵀ + Q`) in eigenbasis form. This `KalmanFilter` is the complete,
+/// dense, standard-form filter used for fusing a NOISY measurement `z` into the
+/// state estimate: it does the predict step (`x = A x`, `P = A P Aᵀ + Q`) AND the
+/// measurement update (Kalman gain `K`, innovation `y = z − Hx`, posterior mean
+/// `x += K y`, posterior covariance `P = (I − K H) P`).
+pub struct KalmanFilter {
+    n: usize,
+    x: Vec<f64>,
+    p: Vec<f64>,
+    a: Vec<f64>,
+    q: Vec<f64>,
+}
+
+impl KalmanFilter {
+    pub fn new(a: &[f64], q: &[f64], x0: &[f64], p0: &[f64], n: usize) -> Self {
+        KalmanFilter {
+            n,
+            x: x0.to_vec(),
+            p: p0.to_vec(),
+            a: a.to_vec(),
+            q: q.to_vec(),
+        }
+    }
+
+    /// Predict step: `x ← A x`, `P ← A P Aᵀ + Q`.
+    pub fn predict(&mut self) {
+        let n = self.n;
+        let mut xnew = vec![0.0f64; n];
+        matmul_rect(&self.a, &self.x, n, n, 1, &mut xnew);
+        self.x = xnew;
+        let mut ap = vec![0.0f64; n * n];
+        matmul_rect(&self.a, &self.p, n, n, n, &mut ap);
+        let mut at = vec![0.0f64; n * n];
+        transpose(&self.a, n, &mut at);
+        let mut apa = vec![0.0f64; n * n];
+        matmul_rect(&ap, &at, n, n, n, &mut apa);
+        for i in 0..n * n {
+            self.p[i] = apa[i] + self.q[i];
+        }
+    }
+
+    /// Measurement update. `z` (m), `h` observation matrix (m×n), `r` noise cov (m×m).
+    pub fn update(&mut self, z: &[f64], h: &[f64], r: &[f64]) {
+        let n = self.n;
+        let m = z.len();
+        let mut hp = vec![0.0f64; m * n];
+        matmul_rect(h, &self.p, m, n, n, &mut hp);
+        let mut ht = vec![0.0f64; n * m];
+        transpose(h, m, &mut ht);
+        let mut hpht = vec![0.0f64; m * m];
+        matmul_rect(&hp, &ht, m, n, m, &mut hpht);
+        let mut s = vec![0.0f64; m * m];
+        for i in 0..m * m {
+            s[i] = hpht[i] + r[i];
+        }
+        let sinv = invert(&s, m);
+        let mut pht = vec![0.0f64; n * m];
+        matmul_rect(&self.p, &ht, n, n, m, &mut pht);
+        let mut k = vec![0.0f64; n * m];
+        matmul_rect(&pht, &sinv, n, m, m, &mut k);
+        let mut y = vec![0.0f64; m];
+        for i in 0..m {
+            let mut hx = 0.0f64;
+            for j in 0..n {
+                hx += h[i * n + j] * self.x[j];
+            }
+            y[i] = z[i] - hx;
+        }
+        for i in 0..n {
+            let mut kdy = 0.0f64;
+            for j in 0..m {
+                kdy += k[i * m + j] * y[j];
+            }
+            self.x[i] += kdy;
+        }
+        let mut kh = vec![0.0f64; n * n];
+        matmul_rect(&k, h, n, m, n, &mut kh);
+        let mut ikh = vec![0.0f64; n * n];
+        eye(n, &mut ikh);
+        for i in 0..n * n {
+            ikh[i] -= kh[i];
+        }
+        let mut newp = vec![0.0f64; n * n];
+        matmul_rect(&ikh, &self.p, n, n, n, &mut newp);
+        self.p = newp;
+    }
+
+    pub fn state(&self) -> &[f64] {
+        &self.x
+    }
+    pub fn covariance(&self) -> &[f64] {
+        &self.p
+    }
+    pub fn n(&self) -> usize {
+        self.n
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -354,5 +478,109 @@ mod tests {
         for &v in &long {
             assert!(v.is_finite(), "stable system must converge (finite P)");
         }
+    }
+
+    // ── BP-21 measurement-update RED→GREEN gates ──────────────────────────────
+
+    #[test]
+    fn measurement_update_reduces_variance_vs_raw() {
+        // BP-21 RED→GREEN: feed a NOISY measurement of a constant truth; the
+        // Kalman-smoothed posterior variance must be LOWER than the raw
+        // measurement-noise variance (the filter fuses info, it does not just
+        // echo the noisy reading). Also the estimate must converge onto truth.
+        let n = 1usize; // scalar state = constant quality level
+        let a = [1.0f64]; // static plant
+        let q = [1e-6f64]; // tiny process noise
+        let x0 = [0.0f64];
+        let p0 = [100.0f64]; // very uncertain prior
+        let h = [1.0f64]; // observe state directly
+        let r = [4.0f64]; // measurement noise variance = 4 (std 2)
+
+        let mut kf = KalmanFilter::new(&a, &q, &x0, &p0, n);
+        let truth = 7.3f64;
+        // deterministic pseudo-noise sequence (no RNG): sine-based, bounded.
+        let noises = [1.4f64, -1.1, 0.7, -0.9, 1.2, -0.3, 0.5, -0.6, 0.2, -0.4];
+        for &nz in &noises {
+            let z = truth + nz;
+            kf.predict();
+            kf.update(&[z], &h, &r);
+        }
+        // Posterior variance << raw measurement variance (4.0): the filter learned.
+        let post_var = kf.covariance()[0];
+        assert!(
+            post_var < 2.0,
+            "posterior var {} must be below raw measurement var 4.0",
+            post_var
+        );
+        // Estimate converged near truth.
+        let est = kf.state()[0];
+        assert!(
+            (est - truth).abs() < 0.5,
+            "estimate {} drifted from truth {}",
+            est,
+            truth
+        );
+    }
+
+    #[test]
+    fn kalman_gain_shrinks_as_covariance_converges() {
+        // BP-21 ACCEPTANCE: the gain K must DECREASE as the covariance converges
+        // (a confident filter trusts new noisy measurements less). RED before a
+        // correct update: K would stay constant/large. We observe K at two stages.
+        let n = 1usize;
+        let a = [1.0f64];
+        let q = [1e-6f64];
+        let x0 = [0.0f64];
+        let p0 = [100.0f64];
+        let h = [1.0f64];
+        let r = [4.0f64];
+        let truth = 5.0f64;
+        let mut kf = KalmanFilter::new(&a, &q, &x0, &p0, n);
+
+        // Gain K = P Hᵀ (H P Hᵀ + R)⁻¹. For scalar: K = P / (P + R).
+        let k_early = {
+            let p = kf.covariance()[0];
+            p / (p + r[0])
+        };
+        // run a few updates
+        let noises = [1.0f64, -0.8, 0.6, -0.5, 0.4];
+        for &nz in &noises {
+            kf.predict();
+            kf.update(&[truth + nz], &h, &r);
+        }
+        let k_late = {
+            let p = kf.covariance()[0];
+            p / (p + r[0])
+        };
+        assert!(
+            k_late < k_early,
+            "gain must shrink as covariance converges: early={} late={}",
+            k_early,
+            k_late
+        );
+        assert!(k_late < 0.5, "converged gain should be modest, got {}", k_late);
+    }
+
+    #[test]
+    fn update_follows_predict_state_propagation() {
+        // BP-21: state-mean propagation x ← A x during predict, then correction
+        // via measurement. A ramping plant x_{k+1}=x_k+0.5; observe it noisily.
+        let n = 1usize;
+        let a = [1.0f64];
+        let q = [0.25f64];
+        let x0 = [0.0f64];
+        let p0 = [1.0f64];
+        let h = [1.0f64];
+        let r = [1.0f64];
+        let mut kf = KalmanFilter::new(&a, &q, &x0, &p0, n);
+        // after one predict x should be 0 (A·0); after update with z=0.5 → x≈0.5.
+        kf.predict();
+        assert!((kf.state()[0]).abs() < 1e-12, "predict should propagate x");
+        kf.update(&[0.5], &h, &r);
+        assert!(
+            (kf.state()[0] - 0.5).abs() < 0.3,
+            "update should pull estimate toward measurement 0.5, got {}",
+            kf.state()[0]
+        );
     }
 }

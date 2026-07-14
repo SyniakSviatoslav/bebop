@@ -59,6 +59,16 @@ pub fn advise(belief: &[f64], b: &[Vec<f64>], g: &[f64]) -> Option<usize> {
     if n_states == 0 || b.is_empty() || b[0].len() != n_states * n_states || g.len() != n_states {
         return None;
     }
+    // BP-23 #6 (D9, fail-closed): the OLD guard only checked `b[0]`. A RAGGED
+    // transition matrix (b[1].len() != n*n) would slip past the check and
+    // `expected_free_energy` would INDEX OUT OF BOUNDS and PANIC on `b[a][..]`.
+    // Validate EVERY action's matrix shape; any mismatch ⇒ refuse (None), never
+    // panic.
+    for ba in b {
+        if ba.len() != n_states * n_states {
+            return None;
+        }
+    }
     let sum: f64 = belief.iter().sum();
     if (sum - 1.0).abs() > 1e-9 {
         return None; // belief must be a probability distribution
@@ -134,5 +144,22 @@ mod tests {
         let s = softmax(&[1.0, 2.0, 3.0], 1.0);
         let sum: f64 = s.iter().sum();
         assert!((sum - 1.0).abs() < 1e-9, "softmax not normalized: {}", sum);
+    }
+
+    #[test]
+    fn ragged_transition_matrix_refused() {
+        // BP-23 #6 (D9, fail-closed). RED: a ragged `B` (b[1] shorter than the
+        // others) slipped past the old guard (which only checked b[0]) and made
+        // `expected_free_energy` index out of bounds → panic. GREEN: `advise`
+        // validates EVERY action matrix and returns None (refuse), no panic.
+        let g = [-2.027, -0.227];
+        // b[0] well-formed (4 entries); b[1] ragged (only 3).
+        let b = vec![
+            vec![0.2, 0.8, 0.2, 0.8],
+            vec![0.2, 0.8, 0.2], // too short → out of range on the (s,s') access
+        ];
+        let belief = [1.0, 0.0];
+        // Must return None (refused), never panic.
+        assert!(advise(&belief, &b, &g).is_none(), "ragged B must be refused");
     }
 }

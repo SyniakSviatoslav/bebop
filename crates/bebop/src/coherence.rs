@@ -23,10 +23,12 @@ pub fn propagate(u0: &[f64], edges: &[(usize, usize)], t: f64, coeff: f64) -> Ve
     // Build degree (D) and adjacency for L = D - A.
     let mut deg = vec![0.0f64; n];
     for &(a, b) in edges {
-        if a < n {
+        // BP-23 #5 (D2, fail-closed): only count an edge toward degree if BOTH
+        // endpoints are in range. The old code incremented `deg[a]`/`deg[b]`
+        // independently, so a malformed edge `(1,9)` still inflated `deg[1]` even
+        // though its out-of-range neighbour term was dropped — corrupting L·u.
+        if a < n && b < n {
             deg[a] += 1.0;
-        }
-        if b < n {
             deg[b] += 1.0;
         }
     }
@@ -46,11 +48,16 @@ pub fn propagate(u0: &[f64], edges: &[(usize, usize)], t: f64, coeff: f64) -> Ve
         for i in 0..n {
             let mut acc = deg[i] * u[i];
             for &(a, b) in edges {
-                if a == i {
-                    acc -= u[b.min(n - 1)];
+                // BP-23 #5 (D2, fail-closed): an edge endpoint out of range
+                // (>= n) is malformed topology. The OLD code silently remapped it
+                // via `b.min(n-1)`, corrupting the neighbour sum with the last
+                // node's amplitude. Now we SKIP the out-of-range term entirely —
+                // the edge is dropped, never clobbered onto a valid node.
+                if a == i && b < n {
+                    acc -= u[b];
                 }
-                if b == i {
-                    acc -= u[a.min(n - 1)];
+                if b == i && a < n {
+                    acc -= u[a];
                 }
             }
             lu[i] = acc;
@@ -175,6 +182,42 @@ mod tests {
             u[1] > 0.0,
             "neighbor should receive positive amplitude, got {}",
             u[1]
+        );
+    }
+
+    #[test]
+    fn out_of_range_edge_is_skipped_not_corrupting() {
+        // BP-23 #5 (D2, fail-closed). RED: an edge with an out-of-range endpoint
+        // (index >= n) must NOT be silently remapped onto the last valid node
+        // (the old `b.min(n-1)` bug), which injected that node's amplitude into
+        // the neighbour sum and broke mass conservation. GREEN: the OOB edge is
+        // dropped; propagation of an in-range seed is unaffected by the garbage
+        // edge relative to the clean graph.
+        let clean = [(0usize, 1), (1, 2), (2, 3)];
+        // garbage edge: endpoint 9 is out of range for a 4-node graph.
+        let dirty = [(0usize, 1), (1, 2), (2, 3), (1, 9)];
+        let u0 = [1.0f64, 0.0, 0.0, 0.0];
+
+        let uc = propagate(&u0, &clean, 1.0, 0.5);
+        let ud = propagate(&u0, &dirty, 1.0, 0.5);
+
+        // The OOB edge must not change the result vs the clean graph: the
+        // malformed edge contributes nothing (no clobber onto node 3).
+        for i in 0..4 {
+            assert!(
+                (uc[i] - ud[i]).abs() < 1e-12,
+                "OOB edge corrupted node {}: clean={} dirty={}",
+                i,
+                uc[i],
+                ud[i]
+            );
+        }
+        // And mass must still be conserved (no phantom mass from the garbage edge).
+        let mass: f64 = ud.iter().sum();
+        assert!(
+            (mass - 1.0).abs() < 1e-2,
+            "OOB edge broke mass conservation: {}",
+            mass
         );
     }
 }
