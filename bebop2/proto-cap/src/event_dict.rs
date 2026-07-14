@@ -284,19 +284,19 @@ pub enum DeliveryEvent {
 
 impl DeliveryEvent {
     pub fn decode(scope: Scope, payload: &[u8]) -> Result<Self, &'static str> {
-        match (scope.resource, scope.action) {
-            (Resource::Order, Action::OrderPlaced) => Ok(DeliveryEvent::OrderPlaced(
+        match scope.grants.first() {
+            Some(&(Resource::Order, Action::OrderPlaced)) => Ok(DeliveryEvent::OrderPlaced(
                 OrderPlacedPayload::decode(payload)?,
             )),
-            (Resource::Order, Action::OrderStatusChanged) => Ok(DeliveryEvent::StatusChanged(
-                StatusChangedPayload::decode(payload)?,
-            )),
-            (Resource::Claim, Action::ClaimOffered)
-            | (Resource::Claim, Action::ClaimAccepted)
-            | (Resource::Claim, Action::ClaimReleased) => {
+            Some(&(Resource::Order, Action::OrderStatusChanged)) => Ok(
+                DeliveryEvent::StatusChanged(StatusChangedPayload::decode(payload)?),
+            ),
+            Some(&(Resource::Claim, Action::ClaimOffered))
+            | Some(&(Resource::Claim, Action::ClaimAccepted))
+            | Some(&(Resource::Claim, Action::ClaimReleased)) => {
                 Ok(DeliveryEvent::Claim(ClaimPayload::decode(payload)?))
             }
-            (Resource::Ledger, Action::SettlementRecorded) => {
+            Some(&(Resource::Ledger, Action::SettlementRecorded)) => {
                 Ok(DeliveryEvent::Settlement(LedgerPayload::decode(payload)?))
             }
             _ => Err("unsupported (resource, action) for delivery event"),
@@ -386,7 +386,7 @@ mod tests {
             dst: "C".into(),
         };
         let ev = DeliveryEvent::decode(
-            Scope::new(Resource::Order, Action::OrderPlaced),
+            Scope::single(Resource::Order, Action::OrderPlaced),
             &op.encode(),
         )
         .unwrap();
@@ -401,7 +401,7 @@ mod tests {
             courier: [7u8; 32],
         };
         let ev = DeliveryEvent::decode(
-            Scope::new(Resource::Claim, Action::ClaimOffered),
+            Scope::single(Resource::Claim, Action::ClaimOffered),
             &cl.encode(),
         )
         .unwrap();
@@ -415,7 +415,7 @@ mod tests {
             amount_i64: -50,
         };
         let ev = DeliveryEvent::decode(
-            Scope::new(Resource::Ledger, Action::SettlementRecorded),
+            Scope::single(Resource::Ledger, Action::SettlementRecorded),
             &led.encode(),
         )
         .unwrap();
@@ -426,7 +426,8 @@ mod tests {
 
         // Unsupported scope -> fail closed.
         assert!(
-            DeliveryEvent::decode(Scope::new(Resource::Route, Action::Send), &[0u8; 4],).is_err()
+            DeliveryEvent::decode(Scope::single(Resource::Route, Action::Send), &[0u8; 4],)
+                .is_err()
         );
     }
 

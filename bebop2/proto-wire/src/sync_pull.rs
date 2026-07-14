@@ -111,7 +111,7 @@ impl SyncScope {
     /// semantics are identical; only the discriminant byte will shift when
     /// MESH-03 promotes the canonical variant.
     pub fn to_capability_scope(&self) -> Scope {
-        Scope::new(Resource::Ledger, Action::Read)
+        Scope::single(Resource::Ledger, Action::Read)
     }
 }
 
@@ -197,7 +197,10 @@ impl SyncFrame {
             "payload exceeds MAX_SYNC_PAYLOAD"
         );
         debug_assert!(
-            self.sig.as_ref().map(|s| s.len() == SYNC_SIG_LEN).unwrap_or(true),
+            self.sig
+                .as_ref()
+                .map(|s| s.len() == SYNC_SIG_LEN)
+                .unwrap_or(true),
             "signature present but not the fixed width"
         );
         let mut out =
@@ -234,16 +237,23 @@ impl SyncFrame {
         let scope = SyncScope::from_tlv_bytes(&[b[0], b[1]]).ok_or(SyncReject::BadPayload)?;
         o += 2;
         // Fixed-width slices; `try_into` on an exact-length slice never fails here.
-        let content_id: [u8; 32] = b[o..o + 32].try_into().map_err(|_| SyncReject::BadPayload)?;
+        let content_id: [u8; 32] = b[o..o + 32]
+            .try_into()
+            .map_err(|_| SyncReject::BadPayload)?;
         o += 32;
-        let prev: [u8; 32] = b[o..o + 32].try_into().map_err(|_| SyncReject::BadPayload)?;
+        let prev: [u8; 32] = b[o..o + 32]
+            .try_into()
+            .map_err(|_| SyncReject::BadPayload)?;
         o += 32;
-        let actor: [u8; 32] = b[o..o + 32].try_into().map_err(|_| SyncReject::BadPayload)?;
+        let actor: [u8; 32] = b[o..o + 32]
+            .try_into()
+            .map_err(|_| SyncReject::BadPayload)?;
         o += 32;
         let seq = u64::from_le_bytes(b[o..o + 8].try_into().map_err(|_| SyncReject::BadPayload)?);
         o += 8;
         let payload_len =
-            u32::from_le_bytes(b[o..o + 4].try_into().map_err(|_| SyncReject::BadPayload)?) as usize;
+            u32::from_le_bytes(b[o..o + 4].try_into().map_err(|_| SyncReject::BadPayload)?)
+                as usize;
         o += 4;
         // Bound the declared length BEFORE trusting it (defense-in-depth over the
         // 1 MiB envelope frame cap, C7a) so a huge prefix can't drive an allocation.
@@ -678,7 +688,14 @@ mod tests {
     #[test]
     fn sync_frame_wire_is_canonical() {
         let (seed, pk) = actor(3);
-        let f = SyncFrame::sign(SyncScope::pull(), [9u8; 32], pk, 7, b"payload-xyz".to_vec(), &seed);
+        let f = SyncFrame::sign(
+            SyncScope::pull(),
+            [9u8; 32],
+            pk,
+            7,
+            b"payload-xyz".to_vec(),
+            &seed,
+        );
 
         // (1) round-trip is lossless and the recovered frame still verifies.
         let wire = f.to_wire_bytes();
@@ -690,18 +707,35 @@ mod tests {
         assert_eq!(wire, f.to_wire_bytes(), "encoding must be deterministic");
 
         // (3) injective: a different frame → different bytes.
-        let g = SyncFrame::sign(SyncScope::pull(), [9u8; 32], pk, 8, b"payload-xyz".to_vec(), &seed);
-        assert_ne!(g.to_wire_bytes(), wire, "distinct frames must encode distinctly");
+        let g = SyncFrame::sign(
+            SyncScope::pull(),
+            [9u8; 32],
+            pk,
+            8,
+            b"payload-xyz".to_vec(),
+            &seed,
+        );
+        assert_ne!(
+            g.to_wire_bytes(),
+            wire,
+            "distinct frames must encode distinctly"
+        );
 
         // (4) canonical/bounded: any deviation from the exact encoding is rejected.
         let mut trailing = wire.clone();
         trailing.push(0x00); // one extra byte
         assert!(
-            matches!(SyncFrame::from_wire_bytes(&trailing), Err(SyncReject::BadPayload)),
+            matches!(
+                SyncFrame::from_wire_bytes(&trailing),
+                Err(SyncReject::BadPayload)
+            ),
             "trailing bytes must be rejected (canonical: exactly one image)"
         );
         assert!(
-            matches!(SyncFrame::from_wire_bytes(&wire[..wire.len() - 1]), Err(SyncReject::BadPayload)),
+            matches!(
+                SyncFrame::from_wire_bytes(&wire[..wire.len() - 1]),
+                Err(SyncReject::BadPayload)
+            ),
             "truncated input must be rejected"
         );
         // Flip the sig_present flag (last-but-64 byte) to an out-of-range value.
@@ -709,14 +743,20 @@ mod tests {
         let flag_pos = wire.len() - 1 - SYNC_SIG_LEN;
         bad_flag[flag_pos] = 2;
         assert!(
-            matches!(SyncFrame::from_wire_bytes(&bad_flag), Err(SyncReject::BadPayload)),
+            matches!(
+                SyncFrame::from_wire_bytes(&bad_flag),
+                Err(SyncReject::BadPayload)
+            ),
             "out-of-range sig_present flag must be rejected"
         );
         // Oversized payload_len (offset 2+32+32+32+8 = 106): claim > 1 MiB.
         let mut big = wire.clone();
         big[106..110].copy_from_slice(&((MAX_SYNC_PAYLOAD as u32) + 1).to_le_bytes());
         assert!(
-            matches!(SyncFrame::from_wire_bytes(&big), Err(SyncReject::BadPayload)),
+            matches!(
+                SyncFrame::from_wire_bytes(&big),
+                Err(SyncReject::BadPayload)
+            ),
             "oversized payload_len must be rejected before allocation"
         );
 

@@ -62,6 +62,10 @@ fn take_u32(buf: &[u8], pos: &mut usize) -> WireResult<u32> {
     let s = take(buf, pos, 4)?;
     Ok(u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
 }
+fn take_u16(buf: &[u8], pos: &mut usize) -> WireResult<u16> {
+    let s = take(buf, pos, 2)?;
+    Ok(u16::from_le_bytes([s[0], s[1]]))
+}
 fn take_u64(buf: &[u8], pos: &mut usize) -> WireResult<u64> {
     let s = take(buf, pos, 8)?;
     let mut a = [0u8; 8];
@@ -79,12 +83,31 @@ fn take_arr32(buf: &[u8], pos: &mut usize) -> WireResult<[u8; 32]> {
     Ok(a)
 }
 
+// ── Scope encode/decode (length-prefixed set of (resource, action) pairs) ──
+// G4: a Scope/Effect is a SET of (resource, action) pairs, so the wire form is
+// `len:u16 LE || (resource_u8, action_u8)*`. Self-delimiting + fail-closed.
+fn scope_to_tlv(scope: &Scope) -> Vec<u8> {
+    scope.to_tlv_bytes()
+}
+
+fn scope_from_tlv(buf: &[u8], pos: &mut usize) -> WireResult<Scope> {
+    let n = take_u16(buf, pos)? as usize;
+    let mut grants = Vec::with_capacity(n);
+    for _ in 0..n {
+        let r = Resource::from_discriminant(take_u8(buf, pos)?)
+            .ok_or_else(|| WireError::Encode("unknown scope resource discriminant".into()))?;
+        let a = Action::from_discriminant(take_u8(buf, pos)?)
+            .ok_or_else(|| WireError::Encode("unknown scope action discriminant".into()))?;
+        grants.push((r, a));
+    }
+    Ok(Scope::new(grants))
+}
+
 // ── Capability encode/decode ───────────────────────────────────────────────────
 fn encode_capability(cap: &Capability) -> Vec<u8> {
     let mut b = Vec::with_capacity(64);
-    // resource(1) action(1) nonce(8) expiry(8) subject_key(32)
-    b.push(cap.scope.resource.discriminant());
-    b.push(cap.scope.action.discriminant());
+    // scope (length-prefixed set) nonce(8) expiry(8) subject_key(32)
+    b.extend_from_slice(&scope_to_tlv(&cap.scope));
     b.extend_from_slice(&cap.nonce);
     put_u64(&mut b, cap.expiry);
     b.extend_from_slice(&cap.subject_key);
@@ -99,16 +122,10 @@ fn encode_capability(cap: &Capability) -> Vec<u8> {
 
 fn decode_capability(buf: &[u8]) -> WireResult<Capability> {
     let mut pos = 0usize;
-    if buf.len() < 2 + 8 + 8 + 32 {
+    let scope = scope_from_tlv(buf, &mut pos)?;
+    if buf.len() - pos < 8 + 8 + 32 {
         return Err(WireError::Encode("capability too short".into()));
     }
-    let resource = Resource::from_discriminant(buf[0]).ok_or_else(|| {
-        WireError::Encode(format!("unknown resource discriminant 0x{:02x}", buf[0]))
-    })?;
-    let action = Action::from_discriminant(buf[1]).ok_or_else(|| {
-        WireError::Encode(format!("unknown action discriminant 0x{:02x}", buf[1]))
-    })?;
-    pos = 2;
     let nonce = take_arr8(buf, &mut pos)?;
     let expiry = take_u64(buf, &mut pos)?;
     let subject_key = take_arr32(buf, &mut pos)?;
@@ -121,7 +138,7 @@ fn decode_capability(buf: &[u8]) -> WireResult<Capability> {
     Ok(Capability {
         subject_key,
         subject_key_pq,
-        scope: Scope::new(resource, action),
+        scope,
         nonce,
         expiry,
     })
@@ -143,10 +160,9 @@ fn encode_delegation(d: &Delegation) -> Vec<u8> {
     let mut b = Vec::with_capacity(64 + 64);
     b.extend_from_slice(&d.issued_by);
     b.extend_from_slice(&d.subject);
-    b.push(d.scope.resource.discriminant());
-    b.push(d.scope.action.discriminant());
-    b.push(d.effect.resource.discriminant());
-    b.push(d.effect.action.discriminant());
+    // scope (length-prefixed set) + effect (length-prefixed set)
+    b.extend_from_slice(&scope_to_tlv(&d.scope));
+    b.extend_from_slice(&scope_to_tlv(&Scope::new(d.effect.grants.clone())));
     put_u64(&mut b, d.expiry);
     b.extend_from_slice(&d.nonce);
     put_bytes(&mut b, &d.signature);
@@ -155,41 +171,22 @@ fn encode_delegation(d: &Delegation) -> Vec<u8> {
 
 fn decode_delegation(buf: &[u8]) -> WireResult<Delegation> {
     let mut pos = 0usize;
-    if buf.len() < 32 + 32 + 4 + 8 + 8 {
+    if buf.len() < 32 + 32 {
         return Err(WireError::Encode("delegation too short".into()));
     }
     let issued_by = take_arr32(buf, &mut pos)?;
     let subject = take_arr32(buf, &mut pos)?;
-    let s_res = Resource::from_discriminant(buf[pos]).ok_or_else(|| {
-        WireError::Encode(format!("delegation unknown resource 0x{:02x}", buf[pos]))
-    })?;
-    pos += 1;
-    let s_act = Action::from_discriminant(buf[pos]).ok_or_else(|| {
-        WireError::Encode(format!("delegation unknown action 0x{:02x}", buf[pos]))
-    })?;
-    pos += 1;
-    let e_res = Resource::from_discriminant(buf[pos]).ok_or_else(|| {
-        WireError::Encode(format!(
-            "delegation unknown effect-resource 0x{:02x}",
-            buf[pos]
-        ))
-    })?;
-    pos += 1;
-    let e_act = Action::from_discriminant(buf[pos]).ok_or_else(|| {
-        WireError::Encode(format!(
-            "delegation unknown effect-action 0x{:02x}",
-            buf[pos]
-        ))
-    })?;
-    pos += 1;
+    let scope = scope_from_tlv(buf, &mut pos)?;
+    let effect_scope = scope_from_tlv(buf, &mut pos)?;
+    let effect = Effect::new(effect_scope.grants.clone());
     let expiry = take_u64(buf, &mut pos)?;
     let nonce = take_arr8(buf, &mut pos)?;
     let signature = take_bytes(buf, &mut pos)?.to_vec();
     Ok(Delegation {
         issued_by,
         subject,
-        scope: Scope::new(s_res, s_act),
-        effect: Effect::new(e_res, e_act),
+        scope,
+        effect,
         expiry,
         nonce,
         signature,
@@ -326,8 +323,8 @@ mod tests {
         let link = Delegation::sign(
             anchor_pk,
             leaf_pk,
-            Scope::new(Resource::Route, Action::Send),
-            Effect::new(Resource::Route, Action::Send),
+            Scope::single(Resource::Route, Action::Send),
+            Effect::single(Resource::Route, Action::Send),
             9999,
             [0x23u8; 8],
             &anchor_seed,

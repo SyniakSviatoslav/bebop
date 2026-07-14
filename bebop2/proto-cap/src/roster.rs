@@ -42,38 +42,52 @@ use crate::error::{CapError, CapResult};
 use crate::scope::{Action, Resource, Scope};
 use crate::tlv::{tlv_signing_input, DOMAIN_DELEGATION};
 
-/// The action a delegation authorizes. For now this is a *superset* of
-/// [`Scope`] — the gate is "effect ⊆ tail scope". We model `Effect` as a
-/// `(resource, action)` pair identical in shape to `Scope`; in this build
-/// `effect == scope`. The subset check is the live gate that makes a
-/// previously-dead `ScopeViolation` meaningful.
+/// The authorization a delegation grants / a capability requests.
 ///
-/// CI GUARD: NO-COURIER-SCORING — an effect is a verb-on-object, never a score.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// G4 (2026-07-14): a delegation does NOT grant a single `(resource, action)`
+/// pair — it grants a *set* of them. A delegated principal may hold several
+/// verbs-on-objects. Attenuation (UCAN "narrow-only") means a child's set is a
+/// **subset** of its parent's set. The previous model stored one pair and made
+/// `is_subset_of` flat equality, so attenuation narrowed *nothing* — that is the
+/// live G4 bug this type fixes.
+///
+/// A `Scope` is therefore a small closed set of `(Resource, Action)` pairs.
+/// `is_subset_of` is a real set-subset, so a parent granting
+/// `{Route::Send, Ledger::Read}` can attenuate a leaf to `{Route::Send}` and the
+/// leaf cannot escalate to `Ledger::Read`.
+///
+/// CI GUARD: NO-COURIER-SCORING — a scope is verbs-on-objects, never a score.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Effect {
-    /// Resource the effect targets.
-    pub resource: Resource,
-    /// Action the effect permits.
-    pub action: Action,
+    /// Set of `(resource, action)` pairs this effect authorizes.
+    pub grants: Vec<(Resource, Action)>,
 }
 
 impl Effect {
-    /// Construct an effect.
-    pub fn new(resource: Resource, action: Action) -> Self {
-        Effect { resource, action }
+    /// Construct an effect from an explicit set of `(resource, action)` pairs.
+    pub fn new(grants: Vec<(Resource, Action)>) -> Self {
+        Effect { grants }
+    }
+
+    /// Single-pair convenience constructor (the previous flat shape).
+    pub fn single(resource: Resource, action: Action) -> Self {
+        Effect {
+            grants: vec![(resource, action)],
+        }
     }
 
     /// Whether `self` is a (narrow-or-equal) subset of `super_scope`.
     ///
-    /// For this build the model is flat: an effect is a subset iff it is
-    /// *equal* to the enclosing scope (exact `(resource, action)` match).
-    /// Narrowing to a strict sub-resource/sub-action lattice would plug in
-    /// here without changing the call sites — the gate is the subset check,
-    /// not the equality.
+    /// G4 fix: set-subset, not equality. Every pair in `self` must appear in
+    /// `super_scope`. An empty effect is a subset of anything (least privilege),
+    /// and a scope is a subset of itself.
     pub fn is_subset_of(&self, super_scope: &Scope) -> bool {
-        self.resource == super_scope.resource && self.action == super_scope.action
+        self.grants.iter().all(|p| super_scope.grants.contains(p))
     }
 }
+
+/// `Scope` (the set of `(resource, action)` pairs) is defined in
+/// `crate::scope::Scope`; `Effect` reuses that type as its superset.
 
 /// A single delegation link in a UCAN-subset chain.
 ///
@@ -112,7 +126,7 @@ impl Delegation {
     pub fn canonical_bytes(&self) -> CapResult<Vec<u8>> {
         let expiry_le = self.expiry.to_le_bytes();
         let scope_bytes = self.scope.to_tlv_bytes();
-        let effect_bytes = Scope::new(self.effect.resource, self.effect.action).to_tlv_bytes();
+        let effect_bytes = Scope::new(self.effect.grants.clone()).to_tlv_bytes();
         Ok(tlv_signing_input(
             DOMAIN_DELEGATION,
             0x01, // struct_tag
@@ -270,16 +284,15 @@ pub fn verify_chain(
             }
         }
         // (c) narrow-only attenuation: this link's scope must be a subset of the
-        // parent's scope. (Flat model => equal; lattice attenuation plugs in here.)
+        // parent's scope (real set-subset since G4 fix).
         if let Some(ps) = parent_scope {
-            let narrowed = Effect::new(link.scope.resource, link.scope.action).is_subset_of(&ps);
-            if !narrowed {
+            if !link.scope.is_subset_of(&ps) {
                 return Err(CapError::ScopeViolation);
             }
         }
 
         prev_subject = Some(link.subject);
-        parent_scope = Some(link.scope);
+        parent_scope = Some(link.scope.clone());
     }
 
     // (d) tail subject binds to the capability's subject.
@@ -289,7 +302,7 @@ pub fn verify_chain(
     }
 
     // (e) requested effect (cap.scope) is a subset of the tail scope.
-    let requested = Effect::new(cap.scope.resource, cap.scope.action);
+    let requested = Effect::new(cap.scope.grants.clone());
     if !requested.is_subset_of(&tail.scope) {
         return Err(CapError::ScopeViolation);
     }
@@ -325,8 +338,8 @@ mod tests {
         let delegation = Delegation::sign(
             pk, // issued_by == self (NOT in roster)
             pk, // subject == self
-            Scope::new(Resource::Route, Action::Send),
-            Effect::new(Resource::Route, Action::Send),
+            Scope::single(Resource::Route, Action::Send),
+            Effect::single(Resource::Route, Action::Send),
             9999,
             [1u8; 8],
             &seed,
@@ -353,8 +366,8 @@ mod tests {
         let tail = Delegation::sign(
             anchor_pk,
             leaf_pk,
-            Scope::new(Resource::Route, Action::Send),
-            Effect::new(Resource::Route, Action::Send),
+            Scope::single(Resource::Route, Action::Send),
+            Effect::single(Resource::Route, Action::Send),
             9999,
             [2u8; 8],
             &anchor_seed,
@@ -386,8 +399,8 @@ mod tests {
         let link0 = Delegation::sign(
             anchor_pk,
             b_pk,
-            Scope::new(Resource::Route, Action::Send),
-            Effect::new(Resource::Route, Action::Send),
+            Scope::single(Resource::Route, Action::Send),
+            Effect::single(Resource::Route, Action::Send),
             9999,
             [4u8; 8],
             &anchor_seed,
@@ -397,8 +410,8 @@ mod tests {
         let link1 = Delegation::sign(
             c_pk,
             leaf_pk,
-            Scope::new(Resource::Route, Action::Send),
-            Effect::new(Resource::Route, Action::Send),
+            Scope::single(Resource::Route, Action::Send),
+            Effect::single(Resource::Route, Action::Send),
             9999,
             [5u8; 8],
             &key(6).0, // seed for c
@@ -428,8 +441,8 @@ mod tests {
         let link0 = Delegation::sign(
             anchor_pk,
             mid_pk,
-            Scope::new(Resource::Route, Action::Send),
-            Effect::new(Resource::Route, Action::Send),
+            Scope::single(Resource::Route, Action::Send),
+            Effect::single(Resource::Route, Action::Send),
             9999,
             [7u8; 8],
             &anchor_seed,
@@ -439,8 +452,8 @@ mod tests {
         let link1 = Delegation::sign(
             mid_pk,
             leaf_pk,
-            Scope::new(Resource::Route, Action::Send),
-            Effect::new(Resource::Route, Action::Send),
+            Scope::single(Resource::Route, Action::Send),
+            Effect::single(Resource::Route, Action::Send),
             9999,
             [8u8; 8],
             &mid_seed,
@@ -461,8 +474,8 @@ mod tests {
         let bogus = Delegation::sign(
             leaf_pk,
             leaf_pk,
-            Scope::new(Resource::Route, Action::Send),
-            Effect::new(Resource::Route, Action::Send),
+            Scope::single(Resource::Route, Action::Send),
+            Effect::single(Resource::Route, Action::Send),
             9999,
             [11u8; 8],
             &leaf_seed,
@@ -481,15 +494,15 @@ mod tests {
         let mut link = Delegation::sign(
             anchor_pk,
             leaf_pk,
-            Scope::new(Resource::Route, Action::Send),
-            Effect::new(Resource::Route, Action::Send),
+            Scope::single(Resource::Route, Action::Send),
+            Effect::single(Resource::Route, Action::Send),
             9999,
             [12u8; 8],
             &anchor_seed,
         )
         .unwrap();
         // Tamper with the granted scope after signing.
-        link.scope = Scope::new(Resource::Ledger, Action::Append);
+        link.scope = Scope::single(Resource::Ledger, Action::Append);
         assert!(matches!(
             link.verify_signature(),
             Err(CapError::BadSignature)
@@ -512,8 +525,8 @@ mod tests {
         let link = Delegation::sign(
             anchor_pk,
             leaf_pk,
-            Scope::new(Resource::Route, Action::Send),
-            Effect::new(Resource::Route, Action::Send),
+            Scope::single(Resource::Route, Action::Send),
+            Effect::single(Resource::Route, Action::Send),
             100, // expiry
             [14u8; 8],
             &anchor_seed,
@@ -526,6 +539,116 @@ mod tests {
         assert!(matches!(
             verify_chain(&roster, &[link], &cap, 101),
             Err(CapError::Expired)
+        ));
+    }
+
+    // ── G4 (2026-07-14): attenuation is a REAL set-subset, not equality ──
+    // A parent granting {Route::Send, Ledger::Read} can attenuate a leaf to
+    // {Route::Send} alone. The leaf's own cap on Route::Send verifies (it is a
+    // subset of its granted tail scope), but the leaf CANNOT escalate to
+    // Ledger::Read — that pair is not in the tail scope.
+
+    #[test]
+    fn g4_attenuation_narrows_and_blocks_escalation() {
+        let (anchor_seed, anchor_pk) = key(0x41);
+        let (_leaf_seed, leaf_pk) = key(0x42);
+
+        // Anchor grants a SET: two verbs-on-objects.
+        let _parent_scope = Scope::new(vec![
+            (Resource::Route, Action::Send),
+            (Resource::Ledger, Action::Read),
+        ]);
+        let tail = Delegation::sign(
+            anchor_pk,
+            leaf_pk,
+            Scope::single(Resource::Route, Action::Send), // attenuated: strictly smaller set
+            Effect::single(Resource::Route, Action::Send),
+            9999,
+            [0x43u8; 8],
+            &anchor_seed,
+        )
+        .unwrap();
+
+        let mut roster = AnchorRoster::new();
+        roster.enroll(&anchor_pk);
+
+        // Leaf requests Route::Send — a subset of the tail scope => OK.
+        let allowed = Capability::new(leaf_pk, Resource::Route, Action::Send, [0x44u8; 8], 9999);
+        assert!(verify_chain(&roster, &[tail.clone()], &allowed, 0).is_ok());
+
+        // Leaf tries to escalate to Ledger::Read — NOT in the (attenuated) tail
+        // scope => ScopeViolation. This is the bug G4 fixes: before the set
+        // model, the parent's broader grant could not be narrowed at all.
+        let escalated = Capability::new(leaf_pk, Resource::Ledger, Action::Read, [0x45u8; 8], 9999);
+        assert!(matches!(
+            verify_chain(&roster, &[tail], &escalated, 0),
+            Err(CapError::ScopeViolation)
+        ));
+    }
+
+    #[test]
+    fn g4_chain_attenuation_is_monotonic() {
+        // anchor {A,B,C} -> mid {A,B} -> leaf {A}. Leaf requesting B is OK;
+        // leaf requesting C (dropped at mid) is ScopeViolation.
+        let (a_seed, a_pk) = key(0x51);
+        let (mid_seed, mid_pk) = key(0x52);
+        let (_leaf_seed, leaf_pk) = key(0x53);
+
+        let l0 = Delegation::sign(
+            a_pk,
+            mid_pk,
+            Scope::new(vec![
+                (Resource::Route, Action::Send),
+                (Resource::Ledger, Action::Read),
+                (Resource::Order, Action::CreateOrder),
+            ]),
+            Effect::new(vec![
+                (Resource::Route, Action::Send),
+                (Resource::Ledger, Action::Read),
+                (Resource::Order, Action::CreateOrder),
+            ]),
+            9999,
+            [0x54u8; 8],
+            &a_seed,
+        )
+        .unwrap();
+        let l1 = Delegation::sign(
+            mid_pk,
+            leaf_pk,
+            Scope::new(vec![
+                (Resource::Route, Action::Send),
+                (Resource::Ledger, Action::Read),
+            ]),
+            Effect::new(vec![
+                (Resource::Route, Action::Send),
+                (Resource::Ledger, Action::Read),
+            ]),
+            9999,
+            [0x55u8; 8],
+            &mid_seed,
+        )
+        .unwrap();
+
+        let mut roster = AnchorRoster::new();
+        roster.enroll(&a_pk);
+
+        // leaf keeps Route::Send (a subset of its tail scope) => OK.
+        let ok = Capability::new(leaf_pk, Resource::Route, Action::Send, [0x56u8; 8], 9999);
+        assert!(verify_chain(&roster, &[l0.clone(), l1.clone()], &ok, 0).is_ok());
+
+        // leaf reaches for Order::CreateOrder, which mid dropped => the per-link
+        // attenuation check (l1.scope ⊆ l0.scope) passes, but the tail scope no
+        // longer contains Order::CreateOrder => ScopeViolation at (e).
+        let exceeded = Capability::new(
+            leaf_pk,
+            Resource::Order,
+            Action::CreateOrder,
+            [0x57u8; 8],
+            9999,
+        );
+        assert!(matches!(
+            verify_chain(&roster, &[l0, l1], &exceeded, 0),
+            Err(CapError::ScopeViolation)
         ));
     }
 }

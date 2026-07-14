@@ -94,7 +94,10 @@ pub fn check_port_scope(
 ) -> Result<(), Reject> {
     let _ = facade; // reserved seam; today's check is a pure scope comparison
     let fs = &frame.capability.scope;
-    if fs.resource != port_scope.resource || fs.action != port_scope.action {
+    // The frame's scope must *contain* the port's required scope (subset):
+    // a port is authorized only for exactly the verbs-on-objects it declares,
+    // never for anything broader carried by the frame. Fail-closed otherwise.
+    if !port_scope.is_subset_of(fs) {
         return Err(Reject {
             reason: CapError::ScopeViolation,
         });
@@ -119,7 +122,7 @@ impl NotificationPort {
     /// Construct a notification port scoped to `Order::Notify`.
     pub fn new() -> Self {
         NotificationPort {
-            scope: Scope::new(Resource::Order, Action::Notify),
+            scope: Scope::single(Resource::Order, Action::Notify),
             last: Mutex::new(None),
         }
     }
@@ -142,7 +145,7 @@ impl OutboundPort for NotificationPort {
     }
 
     fn required_scope(&self) -> Scope {
-        self.scope
+        self.scope.clone()
     }
 
     fn on_projection(&self, p: &Projection) {
@@ -235,7 +238,7 @@ mod tests {
             "mock-inbound"
         }
         fn required_scope(&self) -> Scope {
-            self.scope
+            self.scope.clone()
         }
         async fn submit(
             &self,
@@ -280,8 +283,8 @@ mod tests {
         let link = Delegation::sign(
             *anchor_pk,
             *leaf_pk,
-            Scope::new(res, act),
-            Effect::new(res, act),
+            Scope::single(res, act),
+            Effect::single(res, act),
             9999,
             [7u8; 8],
             anchor_seed,
@@ -314,7 +317,7 @@ mod tests {
     fn r0_check_port_scope_rejects_order_mutation_for_notify_port() {
         let port = NotificationPort::new();
         let port_scope = port.required_scope();
-        assert_eq!(port_scope, Scope::new(Resource::Order, Action::Notify));
+        assert_eq!(port_scope, Scope::single(Resource::Order, Action::Notify));
 
         // Build a frame whose capability scope is an order-mutation intent.
         let (l_seed, l_pk) = key(0x32);
@@ -362,8 +365,8 @@ mod tests {
         let link = Delegation::sign(
             a_pk,
             l_pk,
-            Scope::new(Resource::Order, Action::CreateOrder),
-            Effect::new(Resource::Order, Action::CreateOrder),
+            Scope::single(Resource::Order, Action::CreateOrder),
+            Effect::single(Resource::Order, Action::CreateOrder),
             9999,
             [7u8; 8],
             &a_seed,
@@ -389,7 +392,7 @@ mod tests {
         let facade = facade_for(anchor_roster_with(&a_pk), Box::new(sink));
 
         let port = MockInboundPort {
-            scope: Scope::new(Resource::Order, Action::Notify),
+            scope: Scope::single(Resource::Order, Action::Notify),
             _id: "mock-inbound".to_string(),
         };
         let res = block_on(port.submit(&f, &facade));
@@ -434,7 +437,7 @@ mod tests {
         let facade = facade_for(roster, Box::new(sink));
 
         let port = MockInboundPort {
-            scope: Scope::new(Resource::Order, Action::Notify),
+            scope: Scope::single(Resource::Order, Action::Notify),
             _id: "mock-inbound".to_string(),
         };
         let res = block_on(port.submit(&f, &facade));
@@ -461,7 +464,7 @@ mod tests {
     // different resource/action) is rejected by `check_port_scope`.
     #[test]
     fn r4_attacker_cannot_widen_port_scope_via_frame() {
-        let port_scope = Scope::new(Resource::Order, Action::Notify);
+        let port_scope = Scope::single(Resource::Order, Action::Notify);
 
         // Attacker forges a frame whose capability requests a different
         // resource/action than the port's declared scope.
@@ -515,7 +518,7 @@ mod tests {
         let facade = facade_for(roster, Box::new(sink));
 
         let port = MockInboundPort {
-            scope: Scope::new(Resource::Order, Action::Notify),
+            scope: Scope::single(Resource::Order, Action::Notify),
             _id: "mock-inbound".to_string(),
         };
         let res = block_on(port.submit(&f, &facade));

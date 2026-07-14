@@ -278,8 +278,8 @@ mod tests {
         let delegation = Delegation::sign(
             owner_pk, // issued_by == seeded owner (NOT enrolled anywhere)
             leaf_pk,
-            Scope::new(Resource::Route, Action::Send),
-            Effect::new(Resource::Route, Action::Send),
+            Scope::single(Resource::Route, Action::Send),
+            Effect::single(Resource::Route, Action::Send),
             9999,
             [2u8; 8],
             &_owner_seed,
@@ -329,8 +329,8 @@ mod tests {
         let self_deleg = Delegation::sign(
             owner_pk,
             owner_pk,
-            Scope::new(Resource::Route, Action::Send),
-            Effect::new(Resource::Route, Action::Send),
+            Scope::single(Resource::Route, Action::Send),
+            Effect::single(Resource::Route, Action::Send),
             9999,
             [4u8; 8],
             &_owner_seed,

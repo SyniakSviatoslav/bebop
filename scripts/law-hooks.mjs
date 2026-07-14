@@ -64,12 +64,13 @@ console.log('◆ [§9B] supply-chain gate (cargo-deny advisories/bans/licenses +
 // gate. Only the FAST ones run here (pure grep / cargo metadata); the slow
 // wasm-empty-import proof runs in CI (see .github/workflows/ci.yml sovereign-guards).
 // ---------------------------------------------------------------------------
-console.log('◆ [sovereign] no-courier-scoring · crdt-fence · kernel-fence (structural invariants)');
+console.log('◆ [sovereign] no-courier-scoring · G1 wire-codec · G4 scope-subset · crdt-fence · kernel-fence (structural invariants)');
 for (const [script, why] of [
   ['scripts/ci-no-courier-scoring.sh', 'a struct field names a courier/agent score/rating/rank — trust is a signed capability, never a reputation metric'],
   ['scripts/ci-crdt-fence.sh', 'a money/order crate depends on a CRDT-merge crate (MESH-08 periphery fence)'],
   ['scripts/ci-kernel-fence.sh', 'proto-cap depends on dowiz-kernel (MESH-02 layer-purity fence)'],
   ['scripts/ci-no-serde-json-wire.sh', 'G1 — SignedFrame is serialized with serde_json on the wire instead of the canonical binary codec (wire_codec)'],
+  ['scripts/ci-no-flat-scope.sh', 'G4 — Scope/Effect reverted to flat 2-arg equality, making UCAN attenuation a no-op (must be the set-subset model)'],
 ]) {
   const r = sh('bash', [script]);
   if (r.code !== 0) hard(`${script} failed — ${why}`);

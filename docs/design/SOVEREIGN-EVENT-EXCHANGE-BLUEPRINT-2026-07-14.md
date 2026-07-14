@@ -91,8 +91,13 @@ already present in code:
   dispatcher, and the "topic" enum is split (`scope.rs::Resource` vs `sync_pull.rs::SyncResource`,
   the latter an explicit placeholder).
 - **G4 — Trust root is genesis-frozen.** `AnchorRoster` is enrolled once, never rotates at
-  runtime; there is no revocation-*gossip*; and `Effect::is_subset_of` (`roster.rs:73`) is flat
-  equality, so delegation "attenuation" narrows nothing yet.
+  runtime; there is no revocation-*gossip*; and `Effect::is_subset_of` (`roster.rs`) WAS flat
+  equality, so delegation "attenuation" narrowed nothing. **CLOSED 2026-07-14 (wave 2):** `Scope`
+  and `Effect` are now SETS of `(resource, action)` pairs and `is_subset_of` is a real
+  set-subset — a parent granting `{Route::Send, Ledger::Read}` can attenuate a leaf to
+  `{Route::Send}` and the leaf cannot escalate to `Ledger::Read` (enforced by `g4_attenuation_*`
+  tests + `ci-no-flat-scope.sh`). Roster *runtime rotation* + revocation-gossip remain P3 (not in
+  this gap's scope).
 - **G5 — No red-line gate inside bebop2.** The deny-list guard kernel is archived TS or an
   unrelated graph-physics veto in a different crate whose `bebop boot` no longer calls it.
 - **G6 — Sovereignty guards existed but were not enforced.** `ci-no-courier-scoring.sh`,
@@ -114,6 +119,7 @@ already present in code:
 | No new dep without a falsifiable comparison (zero-trust adoption) | DECART (`AGENTS.md §5`) | process-rule; **no script yet** (follow-up: dep-diff gate) |
 | No reputation/scoring/blacklist of movers | `ci-no-courier-scoring.sh` (scoped to the mesh/trust layer; `bebop2/core/` math excluded) | **WIRED by this change** (law-hooks + CI); RED-proven (G7 closed 2026-07-14) |
 | Canonical schema-on-write on the wire (no serde_json SignedFrame) | `ci-no-serde-json-wire.sh` | **WIRED by wave-1 (2026-07-14)** (law-hooks + CI); RED-proven; G1 CLOSED |
+| Scope/Effect attenuation is a real set-subset (no flat equality) | `ci-no-flat-scope.sh` | **WIRED by wave-2 (2026-07-14)** (law-hooks + CI); RED-proven; G4 CLOSED |
 | Sovereign core reaches no clock/RNG/socket (no phone-home) | `verify-empty-imports.sh` (wasm32 empty-import) | **WIRED by this change** (CI) |
 | Money/order code never depends on a CRDT-merge crate | `ci-crdt-fence.sh` | **WIRED by this change** (law-hooks + CI) |
 | `proto-cap` never depends on `dowiz-kernel` (layer purity) | `ci-kernel-fence.sh` | **WIRED by this change** (law-hooks + CI) |

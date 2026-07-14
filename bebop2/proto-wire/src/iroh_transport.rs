@@ -410,8 +410,8 @@ mod tests {
         let link = Delegation::sign(
             *anchor_pk,
             *leaf_pk,
-            Scope::new(resource, action),
-            Effect::new(resource, action),
+            Scope::single(resource, action),
+            Effect::single(resource, action),
             expiry,
             nonce,
             anchor_seed,

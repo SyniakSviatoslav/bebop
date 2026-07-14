@@ -82,28 +82,54 @@ pub enum Action {
 }
 
 /// `(resource, action)` pair a capability authorizes. No score, no subject rating.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// G4 (2026-07-14): a `Scope` is a *set* of these pairs (a delegated principal
+/// may hold several verbs-on-objects). `is_subset_of` (on `Effect`) is a real
+/// set-subset, so UCAN "narrow-only" attenuation actually narrows. This is the
+/// type that fixes the live G4 attenuation bug (previously `Scope` was a single
+/// pair and attenuation was flat equality).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Scope {
-    pub resource: Resource,
-    pub action: Action,
+    /// Set of authorized `(resource, action)` pairs.
+    pub grants: Vec<(Resource, Action)>,
 }
 
 impl Scope {
-    /// Construct a scope. Placeholder until Tier-4 wiring enumerates the full
-    /// resource/action matrix.
-    pub fn new(resource: Resource, action: Action) -> Self {
-        Scope { resource, action }
+    /// Construct a scope from an explicit set of `(resource, action)` pairs.
+    pub fn new(grants: Vec<(Resource, Action)>) -> Self {
+        Scope { grants }
     }
 
-    /// Fixed-layout canonical encoding of a scope, 2 bytes: `[resource_u8, action_u8]`.
+    /// Single-pair convenience constructor (the previous flat shape).
+    pub fn single(resource: Resource, action: Action) -> Self {
+        Scope {
+            grants: vec![(resource, action)],
+        }
+    }
+
+    /// Fixed-layout canonical encoding of a scope: `len(2 LE) || (resource_u8, action_u8)*`.
     ///
-    /// **No serde.** Discriminants are explicitly assigned so the byte mapping is
-    /// stable across compiler versions and independent of Rust's enum
-    /// representation (which is why this is hand-written, not `#[repr(u8)]` +
-    /// `transmute` — we pin the exact byte values, not whatever the optimizer
-    /// chooses). Consumed by `Capability::canonical_bytes_tlv` for signing.
-    pub fn to_tlv_bytes(&self) -> [u8; 2] {
-        [self.resource.discriminant(), self.action.discriminant()]
+    /// **No serde.** Discriminants are explicitly assigned (see `Resource`/`Action`)
+    /// so the byte mapping is stable across compiler versions and independent of
+    /// Rust's enum representation. Consumed by `Capability::canonical_bytes_tlv`
+    /// and `Delegation::canonical_bytes` for signing. The length prefix makes the
+    /// encoding self-delimiting and fail-closed on a truncated tail.
+    pub fn to_tlv_bytes(&self) -> Vec<u8> {
+        let n = self.grants.len() as u16;
+        let mut out = n.to_le_bytes().to_vec();
+        for (r, a) in &self.grants {
+            out.push(r.discriminant());
+            out.push(a.discriminant());
+        }
+        out
+    }
+
+    /// Whether `self` is a (narrow-or-equal) subset of `super_scope`.
+    ///
+    /// G4 fix: set-subset. Every pair in `self` must appear in `super_scope`.
+    /// An empty scope is a subset of anything; a scope is a subset of itself.
+    pub fn is_subset_of(&self, super_scope: &Scope) -> bool {
+        self.grants.iter().all(|p| super_scope.grants.contains(p))
     }
 }
 
@@ -251,12 +277,14 @@ mod tests {
                 Action::DeliveryConfirmed,
                 Action::SettlementRecorded,
             ] {
-                let s = Scope::new(r, a);
+                let s = Scope::single(r, a);
                 let bytes = s.to_tlv_bytes();
-                assert_eq!(bytes[0], r.discriminant());
-                assert_eq!(bytes[1], a.discriminant());
-                assert_eq!(Resource::from_discriminant(bytes[0]), Some(r));
-                assert_eq!(Action::from_discriminant(bytes[1]), Some(a));
+                // G4 self-delimiting layout: len:u16 LE (==1) || (res, act)
+                assert_eq!(u16::from_le_bytes([bytes[0], bytes[1]]), 1);
+                assert_eq!(bytes[2], r.discriminant());
+                assert_eq!(bytes[3], a.discriminant());
+                assert_eq!(Resource::from_discriminant(bytes[2]), Some(r));
+                assert_eq!(Action::from_discriminant(bytes[3]), Some(a));
             }
         }
     }
@@ -313,12 +341,12 @@ mod tests {
         let (anchor_seed, anchor_pk) = key(0x21);
         let (leaf_seed, leaf_pk) = key(0x22);
 
-        let granted = Scope::new(Resource::Order, Action::CreateOrder);
+        let granted = Scope::single(Resource::Order, Action::CreateOrder);
         let link = Delegation::sign(
             anchor_pk,
             leaf_pk,
             granted,
-            Effect::new(Resource::Order, Action::CreateOrder),
+            Effect::single(Resource::Order, Action::CreateOrder),
             9999,
             [0x23u8; 8],
             &anchor_seed,

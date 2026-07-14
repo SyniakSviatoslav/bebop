@@ -72,7 +72,7 @@ impl Capability {
         Capability {
             subject_key,
             subject_key_pq: None,
-            scope: Scope::new(resource, action),
+            scope: Scope::single(resource, action),
             nonce,
             expiry,
         }
@@ -91,7 +91,7 @@ impl Capability {
         Capability {
             subject_key,
             subject_key_pq: Some(subject_key_pq),
-            scope: Scope::new(resource, action),
+            scope: Scope::single(resource, action),
             nonce,
             expiry,
         }

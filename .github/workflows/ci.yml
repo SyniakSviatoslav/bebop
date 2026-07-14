@@ -70,6 +70,8 @@ jobs:
         run: bash scripts/ci-no-courier-scoring.sh
       - name: G1 — canonical wire codec (no serde_json on the SignedFrame wire path)
         run: bash scripts/ci-no-serde-json-wire.sh
+      - name: G4 — scope/effect attenuation is a real set-subset (no flat equality)
+        run: bash scripts/ci-no-flat-scope.sh
       - name: CRDT periphery fence (money/order ⊥ CRDT-merge crate)
         run: bash scripts/ci-crdt-fence.sh
       - name: Kernel layer fence (proto-cap ⊥ dowiz-kernel)

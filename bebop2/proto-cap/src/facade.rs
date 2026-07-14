@@ -236,8 +236,8 @@ mod tests {
         let link = Delegation::sign(
             *anchor_pk,
             *leaf_pk,
-            Scope::new(cap_resource, cap_action),
-            Effect::new(cap_resource, cap_action),
+            Scope::single(cap_resource, cap_action),
+            Effect::single(cap_resource, cap_action),
             9999,
             [7u8; 8],
             anchor_seed,
@@ -267,8 +267,8 @@ mod tests {
         let link = Delegation::sign(
             *anchor_pk,
             *leaf_pk,
-            Scope::new(granted_resource, granted_action),
-            Effect::new(granted_resource, granted_action),
+            Scope::single(granted_resource, granted_action),
+            Effect::single(granted_resource, granted_action),
             9999,
             [7u8; 8],
             anchor_seed,
@@ -321,8 +321,8 @@ mod tests {
         let link = Delegation::sign(
             a_pk,
             l_pk,
-            Scope::new(Resource::Order, Action::CreateOrder),
-            Effect::new(Resource::Order, Action::CreateOrder),
+            Scope::single(Resource::Order, Action::CreateOrder),
+            Effect::single(Resource::Order, Action::CreateOrder),
             9999,
             [7u8; 8],
             &a_seed,
@@ -488,14 +488,14 @@ mod tests {
         roster.enroll(&[0u8; 32]);
         let (sink, _counter) = MockSink::new();
         let facade = facade_for(roster, Box::new(sink))
-            .with_allowed_reads(vec![Scope::new(Resource::Order, Action::ReadProjection)]);
+            .with_allowed_reads(vec![Scope::single(Resource::Order, Action::ReadProjection)]);
         // Configured read scope -> Ok.
         assert!(facade
-            .read_projection(Scope::new(Resource::Order, Action::ReadProjection))
+            .read_projection(Scope::single(Resource::Order, Action::ReadProjection))
             .is_ok());
         // Anything else -> Reject (ScopeViolation).
         assert!(matches!(
-            facade.read_projection(Scope::new(Resource::Ledger, Action::Read)),
+            facade.read_projection(Scope::single(Resource::Ledger, Action::Read)),
             Err(Reject {
                 reason: CapError::ScopeViolation
             })
