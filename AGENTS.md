@@ -72,7 +72,7 @@ dev-only tooling that never ships in the sovereign core.)
   `docs/design/INTEGRATION-DECART-RULE-2026-07-14.md`.
 
 ## Build/test
-- `cargo test` — 768 Rust tests, RED+GREEN, 0 fail
+- `cargo test` — 769 Rust tests, RED+GREEN, 0 fail
 - `cargo test -p bebop2-core` (full suite), `cargo clippy -p bebop2-core --all-targets`
 - Crypto KATs live in `bebop2/core/src/kat/`; RFC 8439 §2.5.2 + Appendix A.3 are the Poly1305 anchors.
 

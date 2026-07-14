@@ -411,6 +411,14 @@ fn point_identity() -> Point {
     }
 }
 
+/// C4: test-only tally of curve additions, read by `scalar_mul_op_count_is_constant`.
+/// Thread-local so cargo's parallel test threads can't corrupt each other's count
+/// (scalar_mul runs synchronously, so all its point_add calls are on the caller thread).
+#[cfg(test)]
+thread_local! {
+    static POINT_ADD_CALLS: core::cell::Cell<u64> = const { core::cell::Cell::new(0) };
+}
+
 /// Twisted-Edwards addition in extended homogeneous coordinates (RFC 8032
 /// §5.1.4, a = -1). Complete addition — `point_double` reuses it. Verbatim from
 /// the RFC:
@@ -421,6 +429,11 @@ fn point_identity() -> Point {
 /// `d2` must be the precomputed `2*d` (passed in to avoid recomputing the
 /// expensive `fe_invert` inside every addition).
 fn point_add(p: &Point, q: &Point, d2: &Fe) -> Point {
+    // C4 constant-time proof hook: count every curve addition (test builds only, zero
+    // prod overhead). `scalar_mul` must call this the SAME number of times regardless of
+    // the scalar's bits — the op-count test below asserts exactly that.
+    #[cfg(test)]
+    POINT_ADD_CALLS.with(|c| c.set(c.get() + 1));
     let x1 = p.x;
     let y1 = p.y;
     let x2 = q.x;
@@ -662,7 +675,52 @@ fn scalar_add_mod_l(a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
     mod_l(&s)
 }
 
-/// Scalar (LE 32 bytes) × scalar → mod L.
+/// Constant-time field select: returns `b` if `bit == 1`, `a` if `bit == 0`.
+/// `bit` MUST be 0 or 1. Branch-free byte masking (no data-dependent control flow).
+#[inline]
+fn fe_cselect(bit: u8, a: &Fe, b: &Fe) -> Fe {
+    let mask = 0u8.wrapping_sub(bit); // bit=1 -> 0xFF, bit=0 -> 0x00
+    let mut out = [0u8; 32];
+    for i in 0..32 {
+        out[i] = (a[i] & !mask) | (b[i] & mask);
+    }
+    out
+}
+
+/// Constant-time point select: `bit ? b : a`, applied coordinate-wise.
+#[inline]
+fn point_select(bit: u8, a: &Point, b: &Point) -> Point {
+    Point {
+        x: fe_cselect(bit, &a.x, &b.x),
+        y: fe_cselect(bit, &a.y, &b.y),
+        z: fe_cselect(bit, &a.z, &b.z),
+        t: fe_cselect(bit, &a.t, &b.t),
+    }
+}
+
+/// Point scalar multiplication `scalar · base` (LSB-first double-and-add).
+///
+/// C4 (constant-time audit, 2026-07-14): this runs on the SECRET scalar in `sign`
+/// (`a` = clamped key, and the per-signature nonce `r`), so its operation trace must
+/// NOT depend on the scalar bits. The addition is therefore computed on EVERY bit and
+/// the result is chosen by a branch-free [`point_select`] — replacing the prior
+/// `if bit == 1 { result = point_add(..) }`, whose presence/absence of a whole point
+/// addition equalled the secret bit (a double-and-add timing/power oracle → key/nonce
+/// recovery). The math is unchanged (result becomes the sum iff the bit is set), so the
+/// RFC 8032 §7.1 KAT still passes bit-for-bit.
+///
+/// RESIDUAL (documented, NOT fixed here — so `sign` is NOT yet fully constant-time; this
+/// change removes only the GROUP-level secret-bit branch):
+///   (a) SCALAR layer — `mod_l` reduces secret material with BOTH a per-bit `if (byte>>bit)&1`
+///       over the secret nonce hash AND a data-dependent conditional subtract, and the
+///       `add_be`/`sub_be` bignums are variable-length. In `sign` this runs on the nonce `r`
+///       and key `a` (`scalar_from_hash`, `scalar_mul_mod_l`, `scalar_add_mod_l`). This is the
+///       SAME bug class as the branch removed above — a direct secret-bit branch, not a weaker
+///       signal — and biased-nonce lattice attacks make it HIGH priority. Tracked as C4b.
+///   (b) FIELD layer — `reduce_p` has a magnitude-dependent fold loop and `limbs_ge_p`/
+///       `limbs_sub_p` a data-dependent conditional subtract (a weaker, higher-order signal).
+/// A fixed-width Barrett/Montgomery rewrite of BOTH the scalar-mod-L and field reduction closes
+/// the gap (C4b). `verify` uses only PUBLIC scalars, so its non-constant-time paths are fine.
 fn scalar_mul(base: &Point, scalar_le: &[u8; 32]) -> Point {
     let d2 = fe_mul(&fe_d(), &fe_2()); // 2*d, computed once
     let mut result = point_identity();
@@ -670,9 +728,9 @@ fn scalar_mul(base: &Point, scalar_le: &[u8; 32]) -> Point {
     for i in 0..256 {
         let byte = scalar_le[i / 8];
         let bit = (byte >> (i % 8)) & 1;
-        if bit == 1 {
-            result = point_add(&result, &addend, &d2);
-        }
+        // Always add; select branch-free so the op-trace is scalar-independent.
+        let sum = point_add(&result, &addend, &d2);
+        result = point_select(bit, &result, &sum);
         addend = point_double(&addend, &d2);
     }
     result
@@ -902,6 +960,46 @@ mod tests {
         let xi = fe_invert(&x);
         let back = fe_mul(&x, &xi);
         assert_eq!(fe_to_bytes(&back), fe_to_bytes(&one), "x * x^-1 == 1");
+    }
+
+    // ── C4: scalar_mul must be OPERATION-COUNT constant (no secret-bit branch) ──────
+    // Deterministic constant-time proof (no flaky wall-clock timing): the number of
+    // curve additions scalar_mul performs MUST NOT depend on the scalar's Hamming
+    // weight or which bits are set — otherwise the op-trace equals the secret bits.
+    // RED (prior double-and-add `if bit==1 { add }`): a low-weight scalar skips
+    // additions, dropping the count. GREEN (branch-free point_select): exactly one
+    // addition + one doubling per bit = 2·256 = 512 point_add calls for EVERY scalar.
+    #[test]
+    fn scalar_mul_op_count_is_constant() {
+        let b = point_decompress(&B_ENCODED).expect("base point decodes");
+        let count_for = |s: &[u8; 32]| {
+            POINT_ADD_CALLS.with(|c| c.set(0));
+            let _ = scalar_mul(&b, s);
+            POINT_ADD_CALLS.with(|c| c.get())
+        };
+        let zeros = [0u8; 32];
+        let ones = [0xffu8; 32];
+        let mut low_bit = [0u8; 32];
+        low_bit[0] = 1; // scalar = 1 (single low bit)
+        let mut high_bit = [0u8; 32];
+        high_bit[31] = 0x40; // a single high bit, far from the low ones
+
+        let c_zeros = count_for(&zeros);
+        let c_ones = count_for(&ones);
+        let c_low = count_for(&low_bit);
+        let c_high = count_for(&high_bit);
+
+        assert_eq!(
+            c_zeros, c_ones,
+            "op-count varies with Hamming weight (0 vs 256 set bits) → secret-bit timing oracle"
+        );
+        assert_eq!(c_zeros, c_low, "op-count varies with bit position (low bit)");
+        assert_eq!(c_zeros, c_high, "op-count varies with bit position (high bit)");
+        // Exactly one addition + one doubling per scalar bit over 256 bits.
+        assert_eq!(
+            c_zeros, 512,
+            "expected exactly 2 point_add calls per scalar bit (1 add + 1 double)"
+        );
     }
 
     fn hex(b: &[u8]) -> String {
