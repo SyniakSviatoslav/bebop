@@ -704,11 +704,20 @@ pub fn decaps(dk: &[u8; KEM768_DK_LEN], ct: &[u8; KEM768_CT_LEN]) -> SharedSecre
     let kbar2 = sha3_256(&jinput);
 
     let cprime = kpke_encrypt(ek, &mprime, &r);
+    // FIPS 203 §9.1 / Alg 21: implicit rejection MUST be data-independent. Accumulate the FULL
+    // ciphertext difference (no short-circuit) and branchlessly select the real (kbar) vs
+    // implicit-rejection (kbar2) secret. Replaces `if cprime == *ct { kbar } else { kbar2 }`, whose
+    // array `==` short-circuits AND whose branch selected a secret on a secret-derived condition —
+    // the KyberSlash / FO decapsulation timing oracle (found in the 2026-07-14 security review).
+    let mut diff: u8 = 0;
+    for i in 0..KEM768_CT_LEN {
+        diff |= cprime[i] ^ ct[i];
+    }
+    // eq_mask = 0xFF when the ciphertexts are equal (diff == 0), else 0x00 — no branch.
+    let eq_mask: u8 = (((diff as i32) - 1) >> 8) as u8;
     let mut kout = [0u8; 32];
-    if cprime == *ct {
-        kout.copy_from_slice(&kbar);
-    } else {
-        kout.copy_from_slice(&kbar2);
+    for i in 0..32 {
+        kout[i] = (kbar[i] & eq_mask) | (kbar2[i] & !eq_mask);
     }
     kout
 }

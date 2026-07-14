@@ -65,6 +65,10 @@ allow = [
     "Unicode-3.0",
     "Unicode-DFS-2016",
     "CC0-1.0",
+    # CDLA-Permissive-2.0: a permissive DATA license (no copyleft) — carried only by
+    # webpki-root-certs (the Mozilla CA cert bundle, via the rustls/quinn TLS stack).
+    # AGPL-compatible; operator-approved 2026-07-14. Tracked under B4 (TLS-dep review).
+    "CDLA-Permissive-2.0",
     "MPL-2.0",
     "LGPL-2.1-or-later",
     "Unlicense",

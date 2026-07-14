@@ -275,7 +275,11 @@ fn getrandom_syscall(buf: &mut [u8]) -> Result<usize, i64> {
                 lateout("rax") ret,
                 lateout("rcx") _,
                 lateout("r11") _,
-                options(nomem, nostack)
+                // NO `nomem`: the getrandom(2) syscall WRITES entropy into *ptr — a raw pointer the
+                // compiler cannot see. `nomem` (asm accesses no memory) is a false promise that lets
+                // the optimizer keep stale/zero buffer reads = predictable-key miscompile. Default
+                // (may-access-memory) is correct; `nostack` stays (the syscall uses no user stack).
+                options(nostack)
             );
         }
         if ret < 0 {
@@ -322,7 +326,10 @@ fn getrandom_syscall(buf: &mut [u8]) -> Result<usize, i64> {
                 in("x1") chunk,
                 in("x2") 0u64,
                 lateout("x0") ret,
-                options(nomem, nostack)
+                // NO `nomem`: svc getrandom writes entropy into *ptr (a raw pointer the compiler
+                // can't see); nomem would risk a predictable-key miscompile (see x86_64 above).
+                // nostack is correct.
+                options(nostack)
             );
         }
         if ret < 0 {
@@ -782,9 +789,12 @@ mod tests {
         // Compile-time guarantee: the constant-seed entry points
         // (`ChaCha20Rng::from_seed`, `sign::keygen(seed)`, `pq_dsa::keygen(seed)`) are
         // gated behind `#[cfg(any(test, feature = \"dangerous_deterministic\"))]`. In a
-        // normal (non-test, feature-off) build those symbols do NOT exist, so a prod
-        // crate calling `sign::keygen(&[0u8; 32])` FAILS TO COMPILE. That is the
-        // fail-closed property this test documents.
+        // normal (non-test, feature-off) build. CORRECTED (2026-07-14 security review C3/M-5):
+        // that claim is FALSE — the seed-based keygens ARE present in prod as the deterministic
+        // identity-derivation API (`pq_dsa::keygen`/`pq_kem::keygen_internal` are NOT gated; the
+        // proto-* crates enable `test_keygen` on the prod edge). A constant seed is a CALLER
+        // FOOTGUN, not a compile error; prod callers MUST pass an entropy-derived seed. What this
+        // test actually proves is (a)+(b) below on `keygen_from_entropy`.
 
         // Ed25519
         let (pk1, _sk1) = crate::sign::keygen_from_entropy().expect("entropy for Ed25519");
