@@ -71,6 +71,7 @@ One runtime story (cargo-only), one test count (from live `cargo test`), one ver
 `llm-manifest.json`, `README.uk.md`. Add `docs/design/README.md` index + tombstone superseded dumps.
 Add 2-3 runnable `examples/`. Rewrite the stale "PQ=TODO" docs to state PQ is live + enforced.
 - **P3a** ✅ DONE (2026-07-14, this wave): the "PQ=TODO" markers in `bebop2` were STALE — `SignedFrame::sign_pq`/`verify_pq` compute and verify a real 3309-byte ML-DSA-65 signature; `HybridGate` enforces both legs. Removed `TODO-PQ` from `signed_frame.rs`, `error.rs`, `proto-wire/src/lib.rs`, `proto-wire/Cargo.toml`; the PQ leg is now documented as LIVE+enforced. (The remaining "not a TODO" strings are the truthful corrections.)
+- **P3b** ✅ DONE (2026-07-14): doc hygiene. Deleted the stale case-colliding `docs/architecture.md` (it documented the superseded TypeScript kernel; zero inbound links — `docs/ARCHITECTURE.md` is the live Rust/WASM doc). Added a runnable `bebop2/core/examples/pq_demo.rs` (ML-KEM-768 KEM + ML-DSA-65 sign/verify, with a RED tamper check) — `cargo run --example pq_demo -p bebop2-core` passes. **Correction to this roadmap item**: "kill both `CONTRIBUTING.md`" is WRONG — root `CONTRIBUTING.md` (DCO-focused) and `.github/CONTRIBUTING.md` (quick-start) are DIFFERENT and root is linked from `docs/README.md`; both retained. The EXCELLENCE doc's P3 bullet overstated; corrected here.
 
 ### P4 — Clean-slate publish (GATED — your `!`)
 Assemble the remediated keep-set into a fresh-history repo (secrets verified absent) → verify green →
