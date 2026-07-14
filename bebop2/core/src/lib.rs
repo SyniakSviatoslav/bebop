@@ -305,6 +305,12 @@ pub mod lyapunov; // Lyapunov derivative (stability, not ad-hoc vectors)
 #[cfg(feature = "host")]
 pub mod resonator;
 pub mod speedometer; // zero-dep bench + entropy gauge (benchmark-as-speedometer invariant)
+                     // NOTE: `linalg` is intentionally NOT gated behind `feature = "host"`. It is plain
+                     // `f64` + `alloc` (no `crate::math`, no `crate::fft`), so it stays reachable from
+                     // `bebop_proto_cap`, which compiles `bebop2-core` with `default-features = false,
+                     // features = ["std", "test_keygen"]` (no `host`). It is the ONE authoritative
+                     // eigensolver — the dual-authority hazard kill.
+pub mod linalg; // the single authoritative eigensolver (Faddeev-LeVerrier + Durand-Kerner)
 #[cfg(feature = "host")]
 pub mod vsa; // vector symbolic archive (hyperplane bundling, not dense matrices) // closed-loop controller: generate→reflect→supervise, Lyapunov freeze, rollback-to-best
 

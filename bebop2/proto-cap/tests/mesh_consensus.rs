@@ -16,6 +16,7 @@
 //! disconnected graph (λ₂=0 → fail-closed detection). Prints an observable table
 //! for a realistic anchor+leaf topology. No red-line code touched.
 
+use bebop2_core::linalg as core_linalg; // THE single authoritative eigensolver (parity gate target)
 use bebop2_core::sign::keygen;
 use bebop_proto_cap::roster::{AnchorRoster, Delegation};
 use bebop_proto_cap::{Action, Effect, Resource, Scope};
@@ -251,7 +252,10 @@ fn p9_2node_line_fiedler_is_two() {
     // Its random walk is P=[[0,1],[1,0]] (each node degree 1) ⇒ a 2-cycle ⇒
     // periodic, SLEM=1, gap=0 ⇒ it does NOT mix (oscillates forever).
     let (slem, gap) = slem_gap(&transition(&line));
-    assert!(approx(slem, 1.0, 1e-6) && approx(gap, 0.0, 1e-6), "2-line is periodic (τ=∞)");
+    assert!(
+        approx(slem, 1.0, 1e-6) && approx(gap, 0.0, 1e-6),
+        "2-line is periodic (τ=∞)"
+    );
 }
 
 #[test]
@@ -266,7 +270,10 @@ fn p9_triangle_clique_mixes() {
         vec![1.0, 0.0, 1.0],
         vec![1.0, 1.0, 0.0],
     ];
-    assert!(approx(fiedler(&tri), 3.0, 1e-6), "triangle λ₂=3 (fully connected)");
+    assert!(
+        approx(fiedler(&tri), 3.0, 1e-6),
+        "triangle λ₂=3 (fully connected)"
+    );
     let (slem, gap) = slem_gap(&transition(&tri));
     assert!(approx(slem, 0.5, 1e-6), "triangle SLEM=1/2");
     assert!(approx(gap, 0.5, 1e-6), "triangle gap=1/2 > 0 ⇒ mixes");
@@ -281,7 +288,10 @@ fn p9_2cycle_never_mixes() {
     assert!(approx(slem, 1.0, 1e-6), "2-cycle SLEM=1");
     assert!(approx(gap, 0.0, 1e-6), "2-cycle gap=0");
     // mixing time τ = 1/gap → ∞ (never mixes). Assert gap is ~0 (τ unbounded).
-    assert!(gap < 1e-6, "τ=∞ for a 2-cycle (matches kernel 2-cycle case)");
+    assert!(
+        gap < 1e-6,
+        "τ=∞ for a 2-cycle (matches kernel 2-cycle case)"
+    );
 }
 
 #[test]
@@ -315,4 +325,91 @@ fn p9_real_mesh_trust_graph_table() {
     assert!(lambda2 > 1e-6, "anchor core connected ⇒ λ₂ > 0");
     // Leaves attach to a single anchor (tree-like) ⇒ graph is connected ⇒ λ₂>0.
     assert!(gap > 0.0, "connected trust graph mixes (gap>0)");
+}
+
+// ── PARITY GATE: this file's LOCAL solver vs the canonical core::linalg solver ──
+// The Faddeev-LeVerrier + Durand-Kerner solver here was the ONLY copy until
+// `bebop2_core::linalg` consolidated it as the single source of truth. This test asserts
+// the two NEVER diverge (silent-drift killer). The local `eigvals` stays as an independent
+// second method — we cross-check it against the canonical one on identical inputs.
+#[test]
+fn p9_local_solver_agrees_with_core_linalg() {
+    // 2-cycle transition P = [[0,1],[1,0]] → eigs {1,-1}.
+    let p = vec![vec![0.0, 1.0], vec![1.0, 0.0]];
+    let local: Vec<f64> = {
+        let mut v: Vec<f64> = eigvals(&p).iter().map(|e| e.re).collect();
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        v
+    };
+    let canon: Vec<f64> = {
+        let mut v: Vec<f64> = core_linalg::eigenvalues(&p).iter().map(|e| e.re).collect();
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        v
+    };
+    let d = local
+        .iter()
+        .zip(canon.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f64, f64::max);
+    assert!(
+        d < 1e-6,
+        "[PARITY-GATE] local eigvals vs core::linalg diverged max|Δλ|={d:.3e}"
+    );
+
+    // 3-clique transition: P_ij = 1/2 for i≠j → eigs {1, -1/2, -1/2}.
+    let tri_p = transition(&vec![
+        vec![0.0, 1.0, 1.0],
+        vec![1.0, 0.0, 1.0],
+        vec![1.0, 1.0, 0.0],
+    ]);
+    let local3: Vec<f64> = {
+        let mut v: Vec<f64> = eigvals(&tri_p).iter().map(|e| e.re).collect();
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        v
+    };
+    let canon3: Vec<f64> = {
+        let mut v: Vec<f64> = core_linalg::eigenvalues(&tri_p)
+            .iter()
+            .map(|e| e.re)
+            .collect();
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        v
+    };
+    let d3 = local3
+        .iter()
+        .zip(canon3.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f64, f64::max);
+    assert!(
+        d3 < 1e-6,
+        "[PARITY-GATE] local eigvals vs core::linalg (3-clique) diverged max|Δλ|={d3:.3e}"
+    );
+
+    // Full 16-node mesh trust graph (same topology the table test uses).
+    let (adj, _) = build_trust_graph(4, 3);
+    let local_m: Vec<f64> = {
+        let mut v: Vec<f64> = eigvals(&laplacian(&adj)).iter().map(|e| e.re).collect();
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        v
+    };
+    let canon_m: Vec<f64> = {
+        let mut v: Vec<f64> = core_linalg::eigenvalues(&laplacian(&adj))
+            .iter()
+            .map(|e| e.re)
+            .collect();
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        v
+    };
+    let dm = local_m
+        .iter()
+        .zip(canon_m.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f64, f64::max);
+    assert!(
+        dm < 1e-6,
+        "[PARITY-GATE] local eigvals vs core::linalg (mesh16) diverged max|Δλ|={dm:.3e}"
+    );
+    println!(
+        "[PARITY-GATE] mesh_consensus local solver agrees with core::linalg (2-cycle {d:.2e}, 3-clique {d3:.2e}, mesh16 {dm:.2e})"
+    );
 }
