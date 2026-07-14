@@ -71,6 +71,17 @@ dev-only tooling that never ships in the sovereign core.)
   merit, it's chosen.) Worked example (rustls+ring vs aws-lc-rs vs native-tls) + full template →
   `docs/design/INTEGRATION-DECART-RULE-2026-07-14.md`.
 
+## 6. Sovereign event-exchange (OpenDDE) — enforced invariants
+Sovereignty = trust is a **signed, content-addressed, canonically-encoded event any peer verifies from
+first principles**, NEVER a reputation score or a blacklist. Provenance + independent verification + capability
+scoping — not "rotten-source" filtering (an echo chamber, forbidden by §2 here + `LOGIC-LAWS.md` §4/§23).
+Blueprint + principle→code map + gap analysis: `docs/design/SOVEREIGN-EVENT-EXCHANGE-BLUEPRINT-2026-07-14.md`.
+These invariants are now MECHANICALLY ENFORCED (were a manual RED-suite):
+- **No reputation/scoring of movers** (`scripts/ci-no-courier-scoring.sh`) — pre-commit (`law-hooks.mjs`) + CI.
+- **Money/order ⊥ CRDT-merge crate** (`ci-crdt-fence.sh`), **proto-cap ⊥ dowiz-kernel** (`ci-kernel-fence.sh`) — pre-commit + CI.
+- **Sovereign core = empty wasm import section / no phone-home** (`verify-empty-imports.sh`) — CI.
+- **A DONE/CLOSED mesh claim must cite a live test** (`ci-claim-live-test.sh`) — CI.
+
 ## Build/test
 - `cargo test` — 774 Rust tests, RED+GREEN, 0 fail
 - `cargo test -p bebop2-core` (full suite), `cargo clippy -p bebop2-core --all-targets`

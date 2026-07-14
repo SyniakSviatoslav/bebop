@@ -59,6 +59,22 @@ console.log('◆ [§9B] supply-chain gate (cargo-deny advisories/bans/licenses +
 }
 
 // ---------------------------------------------------------------------------
+// Sovereign-core invariants (fast, structural) — SOVEREIGN-EVENT-EXCHANGE-BLUEPRINT
+// P0. Wires the existing MESH guard scripts (were manual-only) into the per-commit
+// gate. Only the FAST ones run here (pure grep / cargo metadata); the slow
+// wasm-empty-import proof runs in CI (see .github/workflows/ci.yml sovereign-guards).
+// ---------------------------------------------------------------------------
+console.log('◆ [sovereign] no-courier-scoring · crdt-fence · kernel-fence (structural invariants)');
+for (const [script, why] of [
+  ['scripts/ci-no-courier-scoring.sh', 'a struct field names a courier/agent score/rating/rank — trust is a signed capability, never a reputation metric'],
+  ['scripts/ci-crdt-fence.sh', 'a money/order crate depends on a CRDT-merge crate (MESH-08 periphery fence)'],
+  ['scripts/ci-kernel-fence.sh', 'proto-cap depends on dowiz-kernel (MESH-02 layer-purity fence)'],
+]) {
+  const r = sh('bash', [script]);
+  if (r.code !== 0) hard(`${script} failed — ${why}`);
+}
+
+// ---------------------------------------------------------------------------
 // §17 — critical thinking: detectable fallacies in staged DOC/PR text
 // ---------------------------------------------------------------------------
 console.log('◆ [§17] fallacy lint on staged docs/claims (ad hominem, correlation≠causation, appeal-to-authority, false dilemma)');

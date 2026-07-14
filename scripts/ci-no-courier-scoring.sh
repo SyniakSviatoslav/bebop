@@ -16,6 +16,10 @@ while IFS= read -r f; do
     echo "NO-COURIER-SCORING violation in $f:"; grep -nE '^\s*[A-Za-z_][A-Za-z0-9_]*\s*:\s' "$f" | grep -E '\b(score|rating|reputation|rank|trust_score|trust_level|courier_score|agent_rating)\b' | sed 's/^/  /'
     hit=1
   fi
-done < <(grep -rlE '\bstruct\b' --include='*.rs' bebop2 2>/dev/null || true)
+done < <(grep -rlE '\bstruct\b' --include='*.rs' bebop2 2>/dev/null | grep -vE '^bebop2/core/' || true)
+# Scope: the mesh/trust/protocol layer (proto-cap, proto-wire, delivery-domain, …) where a
+# courier/agent/mover could be modeled. `bebop2/core/` is EXCLUDED — it is pure crypto + linear
+# algebra (DMD/SVD/spectral) where `rank`/`score` are legitimate math terms, not mover ratings;
+# scanning it would false-positive-block unrelated numerical work now that this is a HARD gate.
 if [ "$hit" -eq 1 ]; then echo "FAIL: NO-COURIER-SCORING gate red"; exit 1; fi
 echo "PASS: NO-COURIER-SCORING — no score/rating/reputation/rank fields."

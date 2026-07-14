@@ -48,3 +48,31 @@ jobs:
         run: cargo build -p bebop2-core --no-default-features --target wasm32-unknown-unknown
       - name: proto-wire — hardened TLS test (--no-default-features; webpki rejects self-signed)
         run: cargo test -p bebop-proto-wire --no-default-features
+
+  # Sovereign-event-exchange invariants (SOVEREIGN-EVENT-EXCHANGE-BLUEPRINT-2026-07-14, P0).
+  # These guard scripts encode agreed sovereignty invariants but were previously a MANUAL
+  # RED-suite (MESH-14) wired into nothing. This job makes them BLOCK at the main boundary:
+  #   - no reputation/scoring of movers (trust = signed capability, not a score)
+  #   - sovereign core reaches no clock/RNG/socket (empty wasm import section = no phone-home)
+  #   - money/order code never depends on a CRDT-merge crate; proto-cap never on dowiz-kernel
+  #   - a "DONE/CLOSED" mesh claim must cite a live test
+  sovereign-guards:
+    name: Sovereign guards (MESH invariants)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain + wasm32 target
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+          rustup target add wasm32-unknown-unknown
+      - name: No reputation/scoring of movers
+        run: bash scripts/ci-no-courier-scoring.sh
+      - name: CRDT periphery fence (money/order ⊥ CRDT-merge crate)
+        run: bash scripts/ci-crdt-fence.sh
+      - name: Kernel layer fence (proto-cap ⊥ dowiz-kernel)
+        run: bash scripts/ci-kernel-fence.sh
+      - name: Live-test claim lint (CLOSED/DONE claims cite a test)
+        run: bash scripts/ci-claim-live-test.sh
+      - name: Sovereign core has an empty wasm import section (no phone-home)
+        run: bash scripts/verify-empty-imports.sh
