@@ -70,9 +70,10 @@ impl AsyncWrite for WssStream {
     }
 }
 
-/// Server TLS config with a fresh self-signed cert (dev/test). Prod deployments MUST supply a real
-/// cert/key (a follow-up: a `ListenTls`-with-cert-path variant); this proves the TLS accept path and
-/// lets the `wss://` handshake test run end-to-end.
+/// Server TLS config with a fresh self-signed cert (DEV/TEST). Production deployments MUST use
+/// [`WssEndpoint::ListenTlsWithCert`] to supply a real operator cert/key (see
+/// [`server_tls_config_from_der`]); this self-signed path only proves the TLS accept path and lets
+/// the `wss://` handshake test run end-to-end.
 fn server_tls_config() -> WireResult<rustls::ServerConfig> {
     let ck = rcgen::generate_simple_self_signed(vec!["localhost".to_string()])
         .map_err(|e| WireError::Carrier(format!("self-signed cert: {e}")))?;
@@ -88,6 +89,36 @@ fn server_tls_config() -> WireResult<rustls::ServerConfig> {
         .map_err(|e| WireError::Carrier(format!("server tls config: {e}")))
 }
 
+/// PRODUCTION server TLS config from an OPERATOR-supplied certificate chain + PKCS#8
+/// private key (both DER). Fail-closed: an empty chain, or a key that does not match the
+/// leaf certificate, returns `Err` — never a silent fallback to a self-signed cert.
+/// (`rustls::with_single_cert` cryptographically checks that the key matches the leaf.)
+fn server_tls_config_from_der(
+    cert_chain_der: &[Vec<u8>],
+    key_pkcs8_der: &[u8],
+) -> WireResult<rustls::ServerConfig> {
+    if cert_chain_der.is_empty() {
+        return Err(WireError::Carrier(
+            "operator TLS: empty certificate chain".into(),
+        ));
+    }
+    let certs: Vec<rustls::pki_types::CertificateDer<'static>> = cert_chain_der
+        .iter()
+        .map(|d| rustls::pki_types::CertificateDer::from(d.clone()))
+        .collect();
+    let key = rustls::pki_types::PrivateKeyDer::from(rustls::pki_types::PrivatePkcs8KeyDer::from(
+        key_pkcs8_der.to_vec(),
+    ));
+    // ring as the explicit PRIMARY provider (never the aws-lc default), same as the dev path.
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    rustls::ServerConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .map_err(|e| WireError::Carrier(format!("tls versions: {e}")))?
+        .with_no_client_auth()
+        .with_single_cert(certs, key)
+        .map_err(|e| WireError::Carrier(format!("operator tls config (key/cert mismatch?): {e}")))
+}
+
 /// Monotonic-ish tick for capability expiry. Uses wall-clock seconds since
 /// A WebSocket Secure transport endpoint descriptor.
 ///
@@ -95,14 +126,56 @@ fn server_tls_config() -> WireResult<rustls::ServerConfig> {
 /// `wss://host:port/path` or the plaintext `ws://` for loopback tests).
 /// For a **server** (`accept`), use [`WssEndpoint::Listen`] with a
 /// `host:port` to bind a TCP listener that upgrades incoming connections.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum WssEndpoint {
     /// A WebSocket URL to dial as a client.
     Url(String),
     /// A `host:port` to bind and accept plaintext `ws://` upgrades on (server side).
     Listen(String),
     /// A `host:port` to bind and accept over rustls TLS (`wss://`) with a self-signed dev cert.
+    /// DEV/TEST ONLY — the ephemeral self-signed cert is not verifiable by a real client
+    /// trust store. Production uses [`WssEndpoint::ListenTlsWithCert`].
     ListenTls(String),
+    /// Operator-cert TLS: bind + accept presenting an OPERATOR-supplied certificate chain +
+    /// PKCS#8 private key (both DER-encoded). Unlike [`WssEndpoint::ListenTls`] (an ephemeral
+    /// self-signed dev cert), this serves the operator's real CA-issued cert.
+    ///
+    /// CAVEAT (no over-claim): a peer only *verifies* this cert when it runs a HARDENED client
+    /// (`--no-default-features`, i.e. `insecure-tls` OFF). The DEFAULT client is accept-any, so
+    /// TLS server-authentication holds end-to-end only against a hardened peer; frame integrity
+    /// is protected regardless by the app-layer hybrid gate (RequireBoth + channel binding).
+    /// NOT yet covered (follow-ups): cert hot-reload/rotation, PEM ingest (DECART), mTLS.
+    /// DER (not PEM) so no cert-parsing dependency is pulled into the sovereign core.
+    ListenTlsWithCert {
+        /// `host:port` to bind.
+        addr: String,
+        /// Certificate chain, leaf first (DER-encoded X.509).
+        cert_chain_der: Vec<Vec<u8>>,
+        /// PKCS#8-encoded (DER) private key for the leaf certificate.
+        key_pkcs8_der: Vec<u8>,
+    },
+}
+
+// Manual Debug: NEVER print the operator private key (or raw cert bytes) — a derived
+// Debug would leak secret key material into any log/trace of a `WssEndpoint`.
+impl std::fmt::Debug for WssEndpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WssEndpoint::Url(u) => f.debug_tuple("Url").field(u).finish(),
+            WssEndpoint::Listen(a) => f.debug_tuple("Listen").field(a).finish(),
+            WssEndpoint::ListenTls(a) => f.debug_tuple("ListenTls").field(a).finish(),
+            WssEndpoint::ListenTlsWithCert {
+                addr,
+                cert_chain_der,
+                ..
+            } => f
+                .debug_struct("ListenTlsWithCert")
+                .field("addr", addr)
+                .field("cert_chain_len", &cert_chain_der.len())
+                .field("key_pkcs8_der", &"<redacted>")
+                .finish(),
+        }
+    }
 }
 
 /// An active WSS session. Carries a single peer's WebSocket stream plus the
@@ -142,6 +215,23 @@ impl WssTransport {
     /// Set the hybrid gate (defaults to `ClassicalUntilPqAudit`).
     pub fn with_gate(self, gate: HybridGate) -> Self {
         WssTransport { gate, ..self }
+    }
+
+    /// The DER of the peer's leaf certificate negotiated during the TLS handshake, if
+    /// this is a client-side TLS session. Test-only accessor: lets a test assert which
+    /// certificate the SERVER actually presented — so a routing bug that served the
+    /// self-signed dev cert instead of the operator cert goes RED end-to-end.
+    #[cfg(test)]
+    pub(crate) fn peer_leaf_cert_der(&self) -> Option<Vec<u8>> {
+        match self.ws.get_ref() {
+            WssStream::ClientTls(s) => s
+                .get_ref()
+                .1
+                .peer_certificates()
+                .and_then(|c| c.first())
+                .map(|c| c.as_ref().to_vec()),
+            _ => None,
+        }
     }
 
     /// Set the enrolled trust-anchor roster used to verify delegation chains.
@@ -245,9 +335,19 @@ impl Transport for WssTransport {
     // but readable by a passive on-path observer.
 
     async fn accept(endpoint: &Self::Endpoint) -> WireResult<Self> {
-        let (addr, tls) = match endpoint {
-            WssEndpoint::Listen(a) => (a.clone(), false),
-            WssEndpoint::ListenTls(a) => (a.clone(), true),
+        // Resolve the bind address + the server TLS config (built BEFORE binding so a bad
+        // operator cert fails fast). `None` = plaintext `ws://`.
+        let (addr, tls_cfg): (String, Option<rustls::ServerConfig>) = match endpoint {
+            WssEndpoint::Listen(a) => (a.clone(), None),
+            WssEndpoint::ListenTls(a) => (a.clone(), Some(server_tls_config()?)),
+            WssEndpoint::ListenTlsWithCert {
+                addr,
+                cert_chain_der,
+                key_pkcs8_der,
+            } => (
+                addr.clone(),
+                Some(server_tls_config_from_der(cert_chain_der, key_pkcs8_der)?),
+            ),
             WssEndpoint::Url(_) => {
                 return Err(WireError::HandshakeRejected(
                     "use connect() for a Url endpoint".into(),
@@ -261,18 +361,20 @@ impl Transport for WssTransport {
             .accept()
             .await
             .map_err(|e| WireError::Carrier(e.to_string()))?;
-        // C5 (full rustls migration): `ListenTls` completes a real SERVER TLS handshake (self-signed
-        // dev cert) so `wss://` works end-to-end; `Listen` stays plaintext (loopback tests).
-        let stream = if tls {
-            let acceptor = TlsAcceptor::from(Arc::new(server_tls_config()?));
-            WssStream::ServerTls(Box::new(
-                acceptor
-                    .accept(tcp)
-                    .await
-                    .map_err(|e| WireError::HandshakeRejected(format!("server tls: {e}")))?,
-            ))
-        } else {
-            WssStream::Plain(tcp)
+        // C5 (full rustls migration): `ListenTls`/`ListenTlsWithCert` complete a real SERVER TLS
+        // handshake (self-signed dev cert / operator cert respectively) so `wss://` works
+        // end-to-end; `Listen` stays plaintext (loopback tests).
+        let stream = match tls_cfg {
+            Some(cfg) => {
+                let acceptor = TlsAcceptor::from(Arc::new(cfg));
+                WssStream::ServerTls(Box::new(
+                    acceptor
+                        .accept(tcp)
+                        .await
+                        .map_err(|e| WireError::HandshakeRejected(format!("server tls: {e}")))?,
+                ))
+            }
+            None => WssStream::Plain(tcp),
         };
         let ws = accept_async(stream)
             .await
@@ -475,6 +577,138 @@ mod tests {
             "hardened webpki-roots verifier MUST reject the self-signed server cert"
         );
         let _ = server.await;
+    }
+
+    // ── Prod operator-cert ListenTls variant ───────────────────────────────────────
+    // The operator-cert config builder must be fail-closed: a valid cert+matching key
+    // builds a config, but a mismatched key or an empty chain is REJECTED (never a
+    // silent fallback to a self-signed cert). RED against a builder that skips validation.
+    #[test]
+    fn operator_tls_config_is_fail_closed() {
+        let op = rcgen::generate_simple_self_signed(vec!["operator.example".to_string()]).unwrap();
+        let op_cert = op.cert.der().to_vec();
+        let op_key = op.signing_key.serialize_der();
+
+        assert!(
+            super::server_tls_config_from_der(&[op_cert.clone()], &op_key).is_ok(),
+            "valid operator cert + matching key must build a server config"
+        );
+        // A key from a DIFFERENT keypair does not match the cert → must be rejected.
+        let other = rcgen::generate_simple_self_signed(vec!["other.example".to_string()]).unwrap();
+        let wrong_key = other.signing_key.serialize_der();
+        assert!(
+            super::server_tls_config_from_der(&[op_cert.clone()], &wrong_key).is_err(),
+            "a key that does not match the certificate MUST be rejected (fail-closed)"
+        );
+        assert!(
+            super::server_tls_config_from_der(&[], &op_key).is_err(),
+            "an empty certificate chain MUST be rejected"
+        );
+    }
+
+    // Proof that the `server_tls_config_from_der` BUILDER presents the operator cert over
+    // real TLS. This builds the acceptor directly (it does NOT exercise accept()'s routing —
+    // `wss_listen_tls_with_operator_cert_roundtrip` covers that end-to-end). An accept-any
+    // client completes the handshake and reads back the exact certificate presented; RED if
+    // the builder emitted a different cert.
+    #[cfg(feature = "insecure-tls")]
+    #[tokio::test]
+    async fn operator_tls_presents_the_operator_cert() {
+        let op = rcgen::generate_simple_self_signed(vec!["operator.example".to_string()]).unwrap();
+        let op_cert = op.cert.der().to_vec();
+        let op_key = op.signing_key.serialize_der();
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let cfg = super::server_tls_config_from_der(&[op_cert.clone()], &op_key)
+            .expect("operator config builds");
+        let server = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let acceptor = TlsAcceptor::from(std::sync::Arc::new(cfg));
+            let _ = acceptor.accept(tcp).await; // drive the server handshake to completion
+        });
+
+        let tcp = TcpStream::connect(addr).await.unwrap();
+        let client_cfg = crate::iroh_transport::client_rustls_config(); // accept-any (insecure-tls)
+        let dns = rustls::pki_types::ServerName::try_from("operator.example").unwrap();
+        let tls = TlsConnector::from(std::sync::Arc::new(client_cfg))
+            .connect(dns, tcp)
+            .await
+            .expect("accept-any client completes the TLS handshake");
+        let (_io, conn) = tls.get_ref();
+        let presented = conn
+            .peer_certificates()
+            .expect("server presented a certificate");
+        assert_eq!(
+            presented[0].as_ref(),
+            op_cert.as_slice(),
+            "server MUST present the operator-supplied cert, not a self-signed dev cert"
+        );
+        let _ = server.await;
+    }
+
+    // Full `accept()` path: `ListenTlsWithCert(operator cert)` must serve a working wss://
+    // endpoint that a client connects to and round-trips a signed frame through — proving
+    // accept() ROUTES the operator variant to a real TLS server, not just that the config
+    // builder works in isolation. (Accept-any client under the default `insecure-tls`.)
+    #[cfg(feature = "insecure-tls")]
+    #[tokio::test]
+    async fn wss_listen_tls_with_operator_cert_roundtrip() {
+        let op = rcgen::generate_simple_self_signed(vec!["operator.example".to_string()]).unwrap();
+        let op_cert = op.cert.der().to_vec();
+        let op_key = op.signing_key.serialize_der();
+
+        let probe = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = probe.local_addr().unwrap();
+        drop(probe);
+
+        let (a_seed, a_pk) = key(2);
+        let (l_seed, l_pk) = key(3);
+        let (frame, roster, chain) = anchored_frame(
+            &a_seed, &a_pk, &l_seed, &l_pk, Resource::Route, Action::Send, [7u8; 8], 9_999_999_999,
+        );
+
+        let (tx, rx) = oneshot::channel();
+        let saddr = addr.to_string();
+        let server_roster = roster.clone();
+        let op_cert_srv = op_cert.clone(); // server moves its copy; keep `op_cert` for the assert
+        let server = tokio::spawn(async move {
+            let _ = tx.send(());
+            let ep = WssEndpoint::ListenTlsWithCert {
+                addr: saddr,
+                cert_chain_der: vec![op_cert_srv],
+                key_pkcs8_der: op_key,
+            };
+            let mut t = WssTransport::accept(&ep)
+                .await
+                .unwrap()
+                .with_roster(server_roster);
+            let f = t.recv().await.unwrap();
+            t.send(f).await.unwrap();
+            let _ = t.close().await;
+        });
+        rx.await.unwrap();
+
+        let client_ep = WssEndpoint::Url(format!("wss://{addr}"));
+        let mut client = WssTransport::connect(&client_ep)
+            .await
+            .expect("wss:// handshake against the operator cert must complete")
+            .with_roster(roster.clone());
+        // GUARDRAIL: assert the cert the server presented THROUGH accept()'s routing is the
+        // OPERATOR cert. RED if accept()'s ListenTlsWithCert arm served server_tls_config()
+        // (the self-signed fallback bug) — the accept-any client alone would NOT catch that.
+        assert_eq!(
+            client.peer_leaf_cert_der().as_deref(),
+            Some(op_cert.as_slice()),
+            "accept(ListenTlsWithCert) MUST present the operator cert, not the self-signed dev cert"
+        );
+        let mut signed = frame;
+        signed.delegation_chain = chain;
+        client.send(signed).await.unwrap();
+        let echoed = client.recv().await.unwrap();
+        assert_eq!(echoed.payload, b"wire-payload");
+        assert!(echoed.verify_classical().is_ok());
+        server.await.unwrap();
     }
 
     #[tokio::test]
