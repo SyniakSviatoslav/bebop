@@ -128,16 +128,12 @@ impl QuicTransport {
     /// Build a client config that trusts our own dev cert (insecure for real
     /// deployments — the wire auth is the signed-frame envelope). `ring` provider.
     fn client_crypto() -> ClientConfig {
-        let rustls_client = rustls::ClientConfig::builder()
-            .dangerous()
-            .with_custom_certificate_verifier(Arc::new(InsecureAcceptAny))
-            .with_no_client_auth();
-        let mut rustls_client = rustls_client;
-        rustls_client.alpn_protocols = vec![ALPN_BEBOP2_WIRE.to_vec()];
-        let quic_client =
-            QuicClientConfig::try_from(rustls_client).expect("quic client config");
-        let mut cfg = ClientConfig::new(Arc::new(quic_client));
-        cfg
+        // C5: client-side rustls TLS via `client_rustls_config()` (see its doc for the honest scope —
+        // client-only; the server accept + a `wss://` handshake test are still pending).
+        let mut rc = client_rustls_config();
+        rc.alpn_protocols = vec![ALPN_BEBOP2_WIRE.to_vec()];
+        let quic_client = QuicClientConfig::try_from(rc).expect("quic client config");
+        ClientConfig::new(Arc::new(quic_client))
     }
 }
 
@@ -188,6 +184,33 @@ impl rustls::client::danger::ServerCertVerifier for InsecureAcceptAny {
 // envelope verified on every recv (HybridGate::RequireBoth). Marked unsafe to
 // make the compromise explicit and greppable.
 unsafe impl Sync for InsecureAcceptAny {}
+
+/// Shared CLIENT TLS config for both carriers (iroh QUIC + wss). C5 (client-side rustls TLS):
+/// - hardened (`insecure-tls` OFF) → verify the server cert against the Mozilla CA roots.
+/// - dev (`insecure-tls` ON, the DEFAULT) → accept ANY cert (local-first; the signed-frame hybrid
+///   gate is the real auth boundary, verified on every recv).
+/// HONEST SCOPE (2026-07-14 3-model review): CLIENT half only. The wss SERVER (`accept`) still runs
+/// plaintext (no TLS acceptor), so a real `wss://` handshake can't complete end-to-end yet; and the
+/// hardened verify branch is COMPILE-CHECKED ONLY — no `wss://` handshake test exercises it. Server-side
+/// TLS accept + a handshake test (rcgen self-signed cert → rejected hardened / accepted dev) are the
+/// REMAINING half of the rustls migration.
+pub(crate) fn client_rustls_config() -> rustls::ClientConfig {
+    #[cfg(feature = "insecure-tls")]
+    {
+        rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(InsecureAcceptAny))
+            .with_no_client_auth()
+    }
+    #[cfg(not(feature = "insecure-tls"))]
+    {
+        let mut roots = rustls::RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        rustls::ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth()
+    }
+}
 
 impl Transport for QuicTransport {
     type Endpoint = QuicEndpoint;

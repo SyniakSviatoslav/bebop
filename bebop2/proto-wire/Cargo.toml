@@ -16,7 +16,7 @@ tokio = { version = "1.48", features = ["rt", "rt-multi-thread", "macros", "net"
 # tests) works without any TLS feature; `wss://` support lands with the rustls migration
 # in a later phase. Keeping this feature off keeps openssl-sys OUT of the lock entirely,
 # so `cargo deny` can hard-fail if it ever re-enters.
-tokio-tungstenite = "0.23"
+tokio-tungstenite = { version = "0.23", features = ["rustls-tls-webpki-roots"] }
 futures-util = "0.3"
 
 # Deterministic (de)serialization of the envelope/frame onto carrier bytes.
@@ -28,6 +28,9 @@ bebop2-core = { path = "../core", version = "0.1.0", default-features = false, f
 quinn = { version = "0.11.11", features = ["ring"] }
 rcgen = { version = "0.14.8", features = ["pem"] }
 rustls = { version = "0.23.42", features = ["ring"] }
+# Real server-cert verification roots (Mozilla CA bundle) for the hardened (non-insecure-tls) build
+# of BOTH carriers — iroh (quinn) and wss (tokio-tungstenite). C5: real TLS, not deferred.
+webpki-roots = "0.26"
 
 # ── Mesh carrier (iroh / QUIC) — DEFERRED, OFFLINE-SAFE ─────────────────────
 # The `iroh` crate is intentionally NOT a dependency: the sovereign core MUST
@@ -38,7 +41,12 @@ rustls = { version = "0.23.42", features = ["ring"] }
 # (`bpv7.rs`) carries the store-and-forward semantics. The empty `iroh` feature
 # is a documented hook, NOT resolvable offline until the dalek conflict is fixed.
 [features]
+default = ["insecure-tls"]
 iroh = []
+# insecure-tls (C5): the iroh/QUIC client accepts ANY TLS cert (dev/local-first — the signed-frame
+# hybrid gate is the real auth). Default-ON preserves current behavior; a hardened build
+# (`--no-default-features`) turns it OFF and REFUSES TO COMPILE until a real ServerCertVerifier is wired.
+insecure-tls = []
 
 [dev-dependencies]
 tokio = { version = "1.48", features = ["rt", "rt-multi-thread", "macros", "net", "sync", "time", "io-util"] }

@@ -15,8 +15,11 @@
 use crate::envelope::{Envelope, ENVELOPE_VERSION};
 use crate::error::{WireError, WireResult};
 
-/// Maximum envelope size we will accept/emit (8 MiB). Fail-closed above this.
-pub const MAX_ENVELOPE_BYTES: usize = 8 * 1024 * 1024;
+/// Maximum envelope size we will accept/emit (1 MiB). Fail-closed above this. A signed frame
+/// (capability + ML-DSA-65 sig ~3.3KB) is ~300x under this; 1 MiB bounds the per-connection buffer
+/// AND the serde parse (C7). Single source of truth — `envelope::from_bytes` references this const,
+/// so encode-cap and decode-cap can never diverge. (Lowered from 8 MiB, 2026-07-14 review.)
+pub const MAX_ENVELOPE_BYTES: usize = 1024 * 1024;
 
 /// Encode an envelope into the length-prefixed wire format.
 pub fn encode(envelope: &Envelope) -> WireResult<Vec<u8>> {

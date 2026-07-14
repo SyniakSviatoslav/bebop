@@ -42,8 +42,17 @@ impl Envelope {
         serde_json::to_vec(self)
     }
 
-    /// Deserialize from canonical JSON bytes.
+    /// Deserialize from canonical JSON bytes. C7 (defense-in-depth): bound the serde parse at the
+    /// SAME cap `framing::decode` already enforces on the length prefix — a single source of truth,
+    /// no separate/conflicting const (a stricter local cap would make 1-8 MiB frames
+    /// sendable-but-undecodable). A signed frame (capability + ML-DSA-65 sig ~3.3KB) is far under it;
+    /// serde_json's default recursion limit (128) bounds nesting depth.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, serde_json::Error> {
+        if bytes.len() > crate::framing::MAX_ENVELOPE_BYTES {
+            return Err(<serde_json::Error as serde::de::Error>::custom(
+                "envelope exceeds framing::MAX_ENVELOPE_BYTES",
+            ));
+        }
         serde_json::from_slice(bytes)
     }
 }

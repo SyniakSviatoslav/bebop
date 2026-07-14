@@ -13,7 +13,9 @@
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::{accept_async, connect_async, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{
+    accept_async, connect_async_tls_with_config, Connector, MaybeTlsStream, WebSocketStream,
+};
 
 use bebop_proto_cap::roster::AnchorRoster;
 use bebop_proto_cap::{HybridGate, HybridPolicy, RevocationSet, SignedFrame};
@@ -119,7 +121,14 @@ impl Transport for WssTransport {
                 ))
             }
         };
-        let (ws, _resp) = connect_async(&url)
+        // C5: client-side rustls TLS for `wss://` (shared config = webpki-roots verification when
+        // hardened, accept-any under `insecure-tls`). `ws://` stays plaintext (connector unused in
+        // Plain mode), so the loopback tests are unaffected. HONEST: the wss SERVER (`accept`) is still
+        // plaintext, so a real `wss://` handshake can't complete end-to-end yet — this is the client half.
+        let connector = Connector::Rustls(std::sync::Arc::new(
+            crate::iroh_transport::client_rustls_config(),
+        ));
+        let (ws, _resp) = connect_async_tls_with_config(&url, None, false, Some(connector))
             .await
             .map_err(|e| WireError::HandshakeRejected(e.to_string()))?;
         Ok(WssTransport::from_stream(
